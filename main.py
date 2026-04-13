@@ -233,12 +233,15 @@ def run_trading_loop():
     # Load saved state if exists
     risk_mgr.load_state()
 
-    # Fetch bankroll from Polymarket
+    # Fetch bankroll from Polymarket — always overrides saved state
     balance = executor.get_balance()
     if balance is None:
         logger.warning("Cannot fetch balance from Polymarket. Check API credentials. "
                        "Dashboard will stay up but trading is disabled until balance is available.")
-        is_leader = False  # Disable trading if we can't get balance
+        risk_mgr.current_bankroll = 0
+        risk_mgr.initial_bankroll = 0
+        risk_mgr.peak_bankroll = 0
+        is_leader = False
     else:
         risk_mgr.sync_bankroll(balance)
         logger.info(f"Bankroll from Polymarket: ${balance:,.2f}")

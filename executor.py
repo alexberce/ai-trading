@@ -274,6 +274,11 @@ class Executor:
         params = {"asset_type": "COLLATERAL"}
         headers = self._get_headers("GET", path)
 
+        logger.info(f"Fetching balance: {self.base_url}{path} | "
+                     f"API key set: {bool(self.api_key)} | "
+                     f"Secret set: {bool(self.api_secret)} | "
+                     f"Wallet: {config.WALLET_ADDRESS[:10]}...")
+
         try:
             resp = self.session.get(
                 f"{self.base_url}{path}",
@@ -281,9 +286,10 @@ class Executor:
                 params=params,
                 timeout=10,
             )
+            logger.info(f"Balance response: {resp.status_code} - {resp.text[:500]}")
+
             if resp.status_code == 200:
                 data = resp.json()
-                # Balance is returned as a string in wei/units — convert to float
                 balance_raw = data.get("balance", "0")
                 balance = float(balance_raw)
                 # USDC has 6 decimals on Polygon
@@ -292,7 +298,6 @@ class Executor:
                 logger.info(f"Polymarket balance: ${balance:.2f}")
                 return balance
             else:
-                logger.error(f"Balance fetch failed: {resp.status_code} - {resp.text} - URL: {resp.url}")
                 return None
         except (requests.RequestException, ValueError) as e:
             logger.error(f"Balance fetch error: {e}")
