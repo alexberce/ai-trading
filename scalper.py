@@ -81,6 +81,11 @@ class Scalper:
             # Skip if we have ANY position on this market (checked from DB every tick)
             if q_key in existing_questions:
                 continue
+            # Skip if we already attempted this market recently (prevents retry spam)
+            attempted = {v.get("question", "").lower().strip() for v in self._pending_orders.values()
+                         if time.time() - v.get("attempted_at", 0) < 300}  # 5 min cooldown
+            if q_key in attempted:
+                continue
 
             signal = self._check_signal(mkt)
             if signal:
@@ -403,8 +408,14 @@ class Scalper:
             side="BUY",
             price=round(price, 2),
             size=num_shares,
-            order_type="FOK",  # Fill immediately or cancel — no stuck limit orders
+            order_type="FAK",  # Fill what's available, cancel rest — no stuck orders
         )
+
+        # Track attempt regardless of success to prevent retry spam
+        self._pending_orders[signal["token_id"]] = {
+            "question": mkt["question"],
+            "attempted_at": time.time(),
+        }
 
         if order:
             self._pending_orders[signal["token_id"]] = {
