@@ -159,10 +159,27 @@ class Executor:
 
             order_side = BUY if side.upper() == "BUY" else SELL
 
-            # Market defaults — Gamma API provides these per market
-            # but they're almost always 0.01 tick and negRisk=False
+            # Market defaults — can be overridden per market
             tick_size = "0.01"
             neg_risk = False
+
+            # Pre-resolve tick size to avoid SDK making its own HTTP call through proxy
+            try:
+                tick_resp = self.session.get(
+                    f"{self.base_url}/tick-size",
+                    params={"token_id": token_id},
+                    timeout=10,
+                )
+                if tick_resp.status_code == 200:
+                    ts = tick_resp.json().get("minimum_tick_size", "0.01")
+                    tick_size = str(ts)
+                    logger.info(f"Tick size for {token_id[:20]}: {tick_size}")
+            except Exception as e:
+                logger.warning(f"Tick size fetch failed, using default: {e}")
+
+            # Pre-populate SDK cache so it doesn't fetch
+            client._ClobClient__tick_sizes[token_id] = tick_size
+            client._ClobClient__neg_risk[token_id] = neg_risk
 
             order_args = OrderArgs(
                 token_id=token_id,
@@ -329,8 +346,7 @@ class Executor:
                 cash = raw / 1_000_000 if raw > 1_000_000 else raw
                 logger.info(f"CLOB cash balance: ${cash:.2f}")
         except Exception as e:
-            logger.error(f"CLOB balance fetch error: {e}")
-            return None
+            logger.warning(f"CLOB balance fetch error: {e}")
 
         # Position value from Data API (public)
         positions_value = 0.0
@@ -351,6 +367,9 @@ class Executor:
                 logger.warning(f"Data API position value fetch failed: {e}")
 
         total = cash + positions_value
+        if total == 0 and not cash and not positions_value:
+            logger.warning("Both CLOB and Data API returned 0 balance")
+            return None
         logger.info(f"Polymarket balance: ${cash:.2f} cash + ${positions_value:.2f} positions = ${total:.2f} total")
         return total
 
