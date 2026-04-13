@@ -101,14 +101,16 @@ def _query_perplexity(market) -> Optional[str]:
         time_context = f"This market resolves in {hours:.0f} hours." if hours else ""
 
         prompt = (
-            f"What is the latest information relevant to this prediction market question? "
-            f"Focus on recent news, data, and expert opinions.\n\n"
+            f"I need current information about this Polymarket prediction market to make a trading decision.\n\n"
             f"Question: {market.question}\n"
-            f"Description: {market.description[:500]}\n"
+            f"Resolution criteria: {market.description[:1000]}\n"
             f"Category: {market.category}\n"
             f"{time_context}\n\n"
-            f"Provide a concise summary of the most relevant recent information. "
-            f"Include specific facts, dates, and sources where possible."
+            f"What is the latest relevant information? Specifically:\n"
+            f"1. Has the event already occurred or been confirmed?\n"
+            f"2. What are the most recent developments (last 7 days)?\n"
+            f"3. Are there any upcoming catalysts that could move this market?\n"
+            f"Include specific facts, dates, and sources."
         )
 
         response = client.chat.completions.create(
@@ -148,26 +150,36 @@ def _query_claude(market, web_context: Optional[str] = None) -> Optional[dict]:
                 f"{web_context}\n"
             )
 
-        prompt = f"""You are a calibrated probability forecaster. Estimate the probability that the following prediction market question resolves YES.
+        prompt = f"""You are a calibrated probability forecaster for Polymarket prediction markets. Estimate the probability that the following market resolves YES.
 
 ## Market Information
 - Question: {market.question}
-- Description: {market.description[:800]}
+- Description: {market.description[:1200]}
 - Category: {market.category}
 - Current market price (YES): {market.yes_price:.2f} (implies {market.implied_probability:.0%} probability)
 - {time_info}
 - Liquidity: ${market.liquidity:,.0f}
 - 24h Volume: ${market.volume_24h:,.0f}
 {context_block}
-## Instructions
-1. Consider base rates for this type of event
-2. Account for the current market price — it reflects the consensus of many traders
-3. Weigh recent information that the market may not have fully priced in
-4. Be well-calibrated: when you say 70%, events should happen ~70% of the time
-5. Avoid overconfidence — large deviations from market price require strong evidence
+## Critical Instructions
+1. READ THE RESOLUTION CRITERIA CAREFULLY. The description defines exactly what "YES" means. Pay attention to:
+   - Specific dates, deadlines, and timeframes
+   - What counts as the triggering event (e.g. "new album" means released AFTER market creation)
+   - Edge cases and exceptions mentioned in the description
+2. If the event has ALREADY HAPPENED based on web context, the probability should be very high (>95%) or very low (<5%)
+3. Account for the current market price — it reflects the consensus of traders, but markets can be wrong
+4. If your estimate differs from the market by more than 20%, you MUST have strong evidence from the web context
+5. Be well-calibrated: when you say 70%, events should happen ~70% of the time
+6. Consider: why might the market be at its current price? What do other traders know that you might not?
+
+## For short-term trading context
+This estimate will be used for scalp trading (buy and sell within hours). Focus on:
+- Is the market likely to move in the next few hours/days?
+- Is there recent news that hasn't been priced in yet?
+- Is the market over/under-reacting to recent information?
 
 Respond with ONLY a JSON object (no markdown, no explanation outside the JSON):
-{{"probability": <float 0.01-0.99>, "confidence": <float 0.1-0.9>, "reasoning": "<1-2 sentence explanation>"}}"""
+{{"probability": <float 0.01-0.99>, "confidence": <float 0.1-0.9>, "reasoning": "<2-3 sentence explanation of your analysis and what evidence supports your estimate>"}}"""
 
         response = client.messages.create(
             model=config.LLM_MODEL,
