@@ -1,302 +1,312 @@
 """
-Scalper — Short-Term Trading Strategy
-Buy → wait for small price move → sell for $2-$10 profit.
+Scalper — Short-Term Momentum/Mean-Reversion Trading
 
-Two strategies running in parallel:
-1. Mean Reversion: buy when price dips below recent average, sell when it reverts
-2. Momentum: ride volume spikes in the direction of the move
+Strategy:
+1. Every tick, fetch markets with recent price changes from Gamma API
+2. Mean reversion: if price dropped >2% in 1 hour, buy (expect bounce)
+3. Momentum: if price moved >3% in 1 day with high volume, ride it
+4. Exit: take profit at +2-3%, stop loss at -3%, or max hold time
 
-Runs every 30 seconds. Targets 10min-3h hold times.
+Targets markets resolving within 7 days (active, not dead long-term bets).
 """
 import time
 import logging
-from datetime import datetime, timezone
+import requests
+import json
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from market_fetcher import MarketFetcher, Market
+from market_fetcher import Market
 from executor import Executor
 from risk_manager import RiskManager
 import config
+import db
 
 logger = logging.getLogger(__name__)
 
 
-class ScalpPosition:
-    """Tracks a single scalp trade."""
-
-    def __init__(self, market: Market, token_id: str, direction: str,
-                 entry_price: float, num_shares: int, order_id: str = ""):
-        self.market = market
-        self.token_id = token_id
-        self.direction = direction
-        self.entry_price = entry_price
-        self.num_shares = num_shares
-        self.order_id = order_id
-        self.opened_at = time.time()
-        self.target_price = entry_price + config.SCALP_TAKE_PROFIT
-        self.stop_price = entry_price - config.SCALP_STOP_LOSS
-
-    @property
-    def age_minutes(self) -> float:
-        return (time.time() - self.opened_at) / 60
-
-    @property
-    def should_force_exit(self) -> bool:
-        return self.age_minutes >= config.SCALP_MAX_HOLD_MINUTES
-
-    def check_exit(self, current_price: float) -> Optional[str]:
-        """Check if position should be exited. Returns reason or None."""
-        if current_price >= self.target_price:
-            return "take_profit"
-        if current_price <= self.stop_price:
-            return "stop_loss"
-        if self.should_force_exit:
-            return "max_hold_time"
-        return None
-
-    def to_dict(self) -> dict:
-        return {
-            "question": self.market.question,
-            "direction": self.direction,
-            "entry_price": self.entry_price,
-            "target_price": self.target_price,
-            "stop_price": self.stop_price,
-            "num_shares": self.num_shares,
-            "age_minutes": round(self.age_minutes, 1),
-            "token_id": self.token_id,
-            "market_id": self.market.id,
-            "position_type": "scalp",
-        }
-
-
 class Scalper:
-    """
-    Short-term trading engine.
-
-    Tick cycle (every 30s):
-    1. Monitor open scalp positions — exit if target/stop/timeout hit
-    2. Scan for mean reversion opportunities — price below recent average
-    3. Scan for momentum opportunities — volume spike + directional move
-    4. Enter new positions if conditions met
-    """
-
-    def __init__(self, fetcher: MarketFetcher, executor: Executor, risk_mgr: RiskManager):
+    def __init__(self, fetcher, executor: Executor, risk_mgr: RiskManager):
         self.fetcher = fetcher
         self.executor = executor
         self.risk_mgr = risk_mgr
-        self.positions: list[ScalpPosition] = []
-        self._price_history: dict[str, list[float]] = {}  # token_id -> recent prices
+        self._last_fetch = 0
+        self._markets_cache = []
+        self._price_history: dict[str, list[tuple[float, float]]] = {}  # market_id -> [(timestamp, price)]
+        self._HISTORY_WINDOW = 300  # Keep 5 minutes of history
 
     def tick(self) -> list[dict]:
-        """
-        Run one scalp cycle. Returns list of actions taken.
-        Called every SCALP_SCAN_INTERVAL seconds.
-        """
+        """Run one scalp cycle. Called every SCALP_SCAN_INTERVAL seconds."""
         actions = []
 
-        # 1. Monitor and exit positions
-        for pos in list(self.positions):
-            try:
-                sp = self.fetcher.get_spread(pos.token_id)
-                if not sp:
-                    continue
-                mid = sp["mid"]
+        if not config.TRADING_ENABLED:
+            return actions
 
-                exit_reason = pos.check_exit(mid)
-                if exit_reason:
-                    pnl = (mid - pos.entry_price) * pos.num_shares
-                    action = self._exit_position(pos, mid, exit_reason)
-                    if action:
-                        actions.append(action)
-            except Exception as e:
-                logger.error(f"Scalp monitor error for {pos.market.question[:30]}: {e}")
+        # Fetch active markets with price movement (cache for 30s)
+        now = time.time()
+        if now - self._last_fetch >= 30:
+            self._markets_cache = self._fetch_movers()
+            self._last_fetch = now
 
-        # 2. Look for new entries (only if we have capacity)
-        if len(self.positions) < config.SCALP_MAX_CONCURRENT:
-            try:
-                markets = self.fetcher.fetch_active_markets(limit=50)
-                liquid_markets = [
-                    m for m in markets
-                    if m.liquidity >= config.SCALP_MIN_LIQUIDITY
-                    and m.yes_token_id
-                    and not self._already_in(m)
-                ]
-                logger.info(f"Scalp tick: {len(liquid_markets)} liquid markets, "
-                            f"{len(self.positions)}/{config.SCALP_MAX_CONCURRENT} positions open")
+        if not self._markets_cache:
+            return actions
 
-                for market in liquid_markets[:10]:  # Check top 10 liquid markets
-                    if len(self.positions) >= config.SCALP_MAX_CONCURRENT:
-                        break
+        # Get current positions to avoid duplicates
+        existing = []
+        try:
+            existing = db.get_live_positions() if config.DATABASE_URL else []
+        except Exception:
+            pass
+        existing_questions = {p.get("question", "").lower().strip() for p in existing}
 
-                    signal = self._find_entry_signal(market)
-                    if signal:
-                        action = self._enter_position(market, signal)
-                        if action:
-                            actions.append(action)
+        # Check how many scalp positions are open
+        open_count = len(existing)
+        if open_count >= config.SCALP_MAX_CONCURRENT:
+            return actions
 
-            except Exception as e:
-                logger.error(f"Scalp scan error: {e}")
+        # Find entry signals
+        for mkt in self._markets_cache:
+            if open_count >= config.SCALP_MAX_CONCURRENT:
+                break
+
+            question = mkt.get("question", "")
+            if question.lower().strip() in existing_questions:
+                continue
+
+            signal = self._check_signal(mkt)
+            if signal:
+                action = self._enter(mkt, signal)
+                if action:
+                    actions.append(action)
+                    open_count += 1
+                    existing_questions.add(question.lower().strip())
+
+        if actions:
+            logger.info(f"Scalper opened {len(actions)} trades")
 
         return actions
 
-    def _find_entry_signal(self, market: Market) -> Optional[dict]:
-        """
-        Check if market has a scalp entry signal.
-        Returns signal dict or None.
-        """
-        token_id = market.yes_token_id
-        spread_info = self.fetcher.get_spread(token_id)
-        if not spread_info or spread_info["mid"] <= 0:
-            return None
-        mid = spread_info["mid"]
-        spread = spread_info["spread"]
+    def _fetch_movers(self) -> list[dict]:
+        """Fetch markets with recent price movement, resolving within 7 days."""
+        try:
+            resp = requests.get(
+                "https://gamma-api.polymarket.com/markets",
+                params={
+                    "active": "true",
+                    "closed": "false",
+                    "limit": 100,
+                    "order": "volume_24hr",
+                    "ascending": "false",
+                },
+                headers={"User-Agent": "Mozilla/5.0"},
+                proxies={"http": None, "https": None},
+                timeout=15,
+            )
+            if resp.status_code != 200:
+                return []
 
-        # Track price history
-        history = self._price_history.setdefault(token_id, [])
-        history.append(mid)
-        if len(history) > 20:
-            history.pop(0)
+            markets = resp.json()
+            now = datetime.now(timezone.utc)
+            movers = []
 
-        # Need at least 5 data points
-        if len(history) < 5:
-            return None
+            for m in markets:
+                # Filter: must have price change data
+                h_change = float(m.get("oneHourPriceChange") or 0)
+                d_change = float(m.get("oneDayPriceChange") or 0)
+                vol24 = float(m.get("volume24hr") or 0)
+                liq = float(m.get("liquidity") or 0)
 
-        avg = sum(history) / len(history)
-        deviation = (mid - avg) / avg if avg > 0 else 0
+                # Must have some movement and liquidity
+                if abs(h_change) < 0.005 and abs(d_change) < 0.01:
+                    continue
+                if liq < config.SCALP_MIN_LIQUIDITY:
+                    continue
 
-        # Log top deviations for debugging
-        if abs(deviation) > 0.01:
-            logger.info(f"  Signal check {market.question[:40]}: price={mid:.3f} avg={avg:.3f} dev={deviation:+.2%}")
+                # Parse prices
+                prices = m.get("outcomePrices", "[]")
+                if isinstance(prices, str):
+                    try:
+                        prices = json.loads(prices)
+                    except:
+                        prices = []
+                yes_price = float(prices[0]) if prices else 0
 
-        # ── Mean Reversion: price dipped below average ──
-        if deviation < -config.SCALP_MEAN_REVERSION_THRESHOLD:
-            return {
-                "type": "mean_reversion",
-                "direction": "yes",
-                "token_id": token_id,
-                "price": mid,
-                "avg_price": avg,
-                "deviation": deviation,
-                "reason": f"Price {mid:.3f} is {abs(deviation):.1%} below avg {avg:.3f}",
-            }
+                # Skip extreme prices (near 0 or 1)
+                if yes_price < 0.05 or yes_price > 0.95:
+                    continue
 
-        # ── Mean Reversion: price spiked above average (buy NO) ──
-        if deviation > config.SCALP_MEAN_REVERSION_THRESHOLD:
-            no_token = market.no_token_id
-            no_mid = self.fetcher.get_midpoint(no_token) if no_token else None
-            if no_mid and no_mid > 0:
+                # Parse token IDs
+                token_ids = m.get("clobTokenIds", "[]")
+                if isinstance(token_ids, str):
+                    try:
+                        token_ids = json.loads(token_ids)
+                    except:
+                        token_ids = []
+
+                if not token_ids or len(token_ids) < 2:
+                    continue
+
+                # Check resolution time — prefer shorter
+                end = m.get("endDateIso", "")
+                hours_left = None
+                if end:
+                    try:
+                        end_dt = datetime.fromisoformat(end + "T23:59:59+00:00") if len(end) == 10 else datetime.fromisoformat(end.replace("Z", "+00:00"))
+                        hours_left = (end_dt - now).total_seconds() / 3600
+                    except:
+                        pass
+
+                movers.append({
+                    "question": m.get("question", ""),
+                    "market_id": m.get("id", ""),
+                    "condition_id": m.get("condition_id", ""),
+                    "yes_price": yes_price,
+                    "no_price": float(prices[1]) if len(prices) > 1 else 1 - yes_price,
+                    "yes_token": token_ids[0],
+                    "no_token": token_ids[1] if len(token_ids) > 1 else "",
+                    "h_change": h_change,
+                    "d_change": d_change,
+                    "vol24": vol24,
+                    "liq": liq,
+                    "hours_left": hours_left,
+                    "neg_risk": m.get("negRisk", False),
+                    "tick_size": m.get("orderPriceMinTickSize", "0.01"),
+                })
+
+            # Track prices for real-time change detection
+            now_ts = time.time()
+            for mkt in movers:
+                mid = mkt["market_id"]
+                price = mkt["yes_price"]
+                if mid not in self._price_history:
+                    self._price_history[mid] = []
+                self._price_history[mid].append((now_ts, price))
+                # Trim old entries
+                self._price_history[mid] = [
+                    (t, p) for t, p in self._price_history[mid]
+                    if now_ts - t < self._HISTORY_WINDOW
+                ]
+                # Calculate real-time change (vs oldest price in window)
+                history = self._price_history[mid]
+                if len(history) >= 2:
+                    oldest_price = history[0][1]
+                    if oldest_price > 0:
+                        mkt["rt_change"] = (price - oldest_price) / oldest_price
+                    else:
+                        mkt["rt_change"] = 0
+                else:
+                    mkt["rt_change"] = 0
+
+            # Sort by real-time change (most volatile), fall back to hourly
+            movers.sort(key=lambda x: abs(x.get("rt_change", 0)) + abs(x["h_change"]), reverse=True)
+            logger.info(f"Scalper: {len(movers)} active markets, {sum(1 for m in movers if abs(m.get('rt_change',0)) > 0.005)} with real-time movement")
+            return movers
+
+        except Exception as e:
+            logger.error(f"Scalper fetch error: {e}")
+            return []
+
+    def _check_signal(self, mkt: dict) -> Optional[dict]:
+        """Check if a market has a tradeable signal."""
+        rt = mkt.get("rt_change", 0)  # Real-time change (last 5 min)
+        h = mkt["h_change"]  # Hourly change
+        d = mkt["d_change"]  # Daily change
+        vol24 = mkt["vol24"]
+        price = mkt["yes_price"]
+        threshold = config.SCALP_MEAN_REVERSION_THRESHOLD
+
+        # Real-time signals (strongest — price just moved in last few minutes)
+        if abs(rt) >= threshold:
+            if rt < 0:
+                return {
+                    "type": "rt_dip",
+                    "direction": "yes",
+                    "token_id": mkt["yes_token"],
+                    "price": price,
+                    "reason": f"Dropped {rt:+.1%} in last 5min, buying dip",
+                }
+            else:
+                return {
+                    "type": "rt_spike",
+                    "direction": "no",
+                    "token_id": mkt["no_token"],
+                    "price": mkt["no_price"],
+                    "reason": f"Spiked {rt:+.1%} in last 5min, buying NO for pullback",
+                }
+
+        # Hourly mean reversion (price moved, expect correction)
+        if abs(h) >= threshold * 2:
+            if h < 0:
+                return {
+                    "type": "mean_reversion",
+                    "direction": "yes",
+                    "token_id": mkt["yes_token"],
+                    "price": price,
+                    "reason": f"YES dropped {h:+.1%} in 1h, expecting bounce",
+                }
+            else:
                 return {
                     "type": "mean_reversion",
                     "direction": "no",
-                    "token_id": no_token,
-                    "price": no_mid,
-                    "avg_price": 1 - avg,
-                    "deviation": -deviation,
-                    "reason": f"YES price {mid:.3f} is {deviation:.1%} above avg, buying NO",
+                    "token_id": mkt["no_token"],
+                    "price": mkt["no_price"],
+                    "reason": f"YES spiked {h:+.1%} in 1h, buying NO",
                 }
 
-        # ── Momentum: tight spread + consecutive price moves ──
-        if spread < 0.02:
-            # Tight spread + price moving up = momentum
-            if len(history) >= 3 and all(history[-i] > history[-i-1] for i in range(1, min(3, len(history)))):
+        # Momentum: strong daily trend with volume
+        if abs(d) > 0.03 and vol24 > 10000:
+            if d > 0:
                 return {
                     "type": "momentum",
                     "direction": "yes",
-                    "token_id": token_id,
-                    "price": mid,
-                    "reason": f"Tight spread ({spread:.3f}) + upward momentum",
+                    "token_id": mkt["yes_token"],
+                    "price": price,
+                    "reason": f"Momentum {d:+.1%} daily, vol ${vol24:,.0f}",
+                }
+            else:
+                return {
+                    "type": "momentum",
+                    "direction": "no",
+                    "token_id": mkt["no_token"],
+                    "price": mkt["no_price"],
+                    "reason": f"Momentum {d:+.1%} daily, vol ${vol24:,.0f}",
                 }
 
         return None
 
-    def _enter_position(self, market: Market, signal: dict) -> Optional[dict]:
-        """Place a buy order for a scalp position."""
+    def _enter(self, mkt: dict, signal: dict) -> Optional[dict]:
+        """Place a buy order for a scalp trade."""
         price = signal["price"]
-        max_shares = int(config.SCALP_MAX_POSITION_SIZE / price) if price > 0 else 0
-        if max_shares < 1:
+        if price <= 0:
             return None
 
-        order = self.executor.execute_trade(
+        max_spend = min(config.SCALP_MAX_POSITION_SIZE, self.risk_mgr.current_bankroll * 0.1)
+        num_shares = int(max_spend / price) if price > 0 else 0
+        if num_shares < 5:  # Polymarket minimum
+            return None
+
+        logger.info(
+            f"SCALP ENTRY: {signal['type']} {signal['direction'].upper()} "
+            f"{mkt['question'][:40]} @ {price:.3f} x{num_shares} "
+            f"({signal['reason']})"
+        )
+
+        order = self.executor.place_order(
             token_id=signal["token_id"],
-            direction=signal["direction"],
-            num_shares=max_shares,
-            target_price=price,
+            side="BUY",
+            price=round(price, 2),
+            size=num_shares,
         )
 
         if order:
-            pos = ScalpPosition(
-                market=market,
-                token_id=signal["token_id"],
-                direction=signal["direction"],
-                entry_price=price,
-                num_shares=max_shares,
-                order_id=order.id,
-            )
-            self.positions.append(pos)
-            logger.info(
-                f"SCALP ENTRY: {signal['type']} {signal['direction'].upper()} "
-                f"{market.question[:40]} @ {price:.3f} x{max_shares} "
-                f"(target={pos.target_price:.3f} stop={pos.stop_price:.3f})"
-            )
             return {
                 "action": "entry",
                 "type": signal["type"],
-                "question": market.question,
+                "question": mkt["question"],
                 "direction": signal["direction"],
                 "price": price,
-                "shares": max_shares,
+                "shares": num_shares,
                 "reason": signal["reason"],
             }
 
         return None
-
-    def _exit_position(self, pos: ScalpPosition, current_price: float,
-                       reason: str) -> Optional[dict]:
-        """Exit a scalp position."""
-        pnl = (current_price - pos.entry_price) * pos.num_shares
-
-        # Place sell order
-        order = self.executor.place_limit_order(
-            token_id=pos.token_id,
-            side="SELL",
-            price=round(current_price, 2),
-            size=pos.num_shares,
-        )
-
-        self.positions.remove(pos)
-
-        logger.info(
-            f"SCALP EXIT ({reason}): {pos.direction.upper()} "
-            f"{pos.market.question[:40]} @ {current_price:.3f} "
-            f"(entry={pos.entry_price:.3f} pnl=${pnl:+.2f} held={pos.age_minutes:.0f}min)"
-        )
-
-        return {
-            "action": "exit",
-            "reason": reason,
-            "question": pos.market.question,
-            "direction": pos.direction,
-            "entry_price": pos.entry_price,
-            "exit_price": current_price,
-            "pnl": round(pnl, 2),
-            "hold_minutes": round(pos.age_minutes, 1),
-        }
-
-    def _already_in(self, market: Market) -> bool:
-        """Check if we already have a scalp position in this market."""
-        return any(
-            p.market.id == market.id for p in self.positions
-        )
-
-    def get_positions_dicts(self) -> list[dict]:
-        """Get all scalp positions as dicts for the dashboard."""
-        result = []
-        for pos in self.positions:
-            d = pos.to_dict()
-            sp = self.fetcher.get_spread(pos.token_id)
-            mid = sp["mid"] if sp else None
-            if mid:
-                d["current_price"] = mid
-                d["unrealized_pnl"] = round((mid - pos.entry_price) * pos.num_shares, 2)
-            result.append(d)
-        return result
