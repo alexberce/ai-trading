@@ -27,7 +27,7 @@ class RiskManager:
     """
 
     def __init__(self, bankroll: Optional[float] = None):
-        self.initial_bankroll = bankroll or config.BANKROLL
+        self.initial_bankroll = bankroll or 0
         self.current_bankroll = self.initial_bankroll
         self.peak_bankroll = self.initial_bankroll
         self.daily_start_bankroll = self.initial_bankroll

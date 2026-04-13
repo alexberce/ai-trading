@@ -16,12 +16,11 @@ POLY_API_KEY = os.getenv("POLY_API_KEY", "")
 POLY_API_SECRET = os.getenv("POLY_API_SECRET", "")
 POLY_API_PASSPHRASE = os.getenv("POLY_API_PASSPHRASE", "")
 
-# Ethereum wallet for signing transactions
-PRIVATE_KEY = os.getenv("PRIVATE_KEY", "")
+# Polymarket proxy wallet address
 WALLET_ADDRESS = os.getenv("WALLET_ADDRESS", "")
 
 # ─── Bankroll & Risk Management ──────────────────────────────────────
-BANKROLL = float(os.getenv("BANKROLL", "2000"))  # Starting capital in USDC
+BANKROLL = None  # Must be fetched from Polymarket at startup
 
 # Kelly Criterion
 MAX_KELLY_FRACTION = 0.25      # Use quarter-Kelly (conservative)
