@@ -134,6 +134,11 @@ class Scalper:
                 continue
 
             change = (cur - entry) / entry if entry > 0 else 0
+
+            # Log positions with significant P&L
+            if abs(change) > 0.02:
+                logger.info(f"  Position: {question[:35]} entry={entry:.3f} cur={cur:.3f} change={change:+.1%}")
+
             reason = None
 
             # Take profit
