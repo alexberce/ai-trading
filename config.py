@@ -99,6 +99,9 @@ LLM_MODEL = os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001")
 PERPLEXITY_MODEL = os.getenv("PERPLEXITY_MODEL", "sonar")
 LLM_ESTIMATE_WEIGHT = float(os.getenv("LLM_ESTIMATE_WEIGHT", "0.35"))
 
+# ─── Database (Railway PostgreSQL plugin provides DATABASE_URL) ──────
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+
 # ─── Logging & State ─────────────────────────────────────────────────
 LOG_FILE = "trading.log"
 STATE_FILE = "state.json"

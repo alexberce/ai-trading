@@ -182,6 +182,12 @@ def run_trading_loop():
     # Load saved state if exists
     risk_mgr.load_state()
 
+    # Sync bankroll from Polymarket balance
+    balance = executor.get_balance()
+    if balance is not None:
+        risk_mgr.sync_bankroll(balance)
+        logger.info(f"Bankroll synced from Polymarket: ${balance:,.2f}")
+
     last_scan = 0
     last_order_check = 0
     last_rebalance = 0

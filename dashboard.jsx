@@ -4,8 +4,8 @@ const MOCK_DATA = {
   updated_at: new Date().toISOString(),
   last_scan: new Date().toISOString(),
   portfolio: {
-    bankroll: 2000, initial_bankroll: 2000, total_return: 0,
-    total_pnl_closed: 0, peak_bankroll: 2000, drawdown: 0,
+    bankroll: 0, initial_bankroll: 0, total_return: 0,
+    total_pnl_closed: 0, peak_bankroll: 0, drawdown: 0,
     open_positions: 0, total_exposure: 0, exposure_pct: 0,
     closed_trades: 0, wins: 0, losses: 0, win_rate: 0,
     avg_win: 0, avg_loss: 0, is_halted: false, halt_reason: "",

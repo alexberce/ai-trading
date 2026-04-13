@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from probability_estimator import ProbabilityEstimate
 import config
+import db
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,17 @@ class RiskManager:
         # Risk state
         self.is_halted = False
         self.halt_reason = ""
+
+    def sync_bankroll(self, balance: float):
+        """Sync bankroll from exchange balance, accounting for open position costs."""
+        exposure = self._total_exposure()
+        self.current_bankroll = balance + exposure
+        if self.current_bankroll > self.peak_bankroll:
+            self.peak_bankroll = self.current_bankroll
+        logger.info(
+            f"Bankroll synced: ${balance:.2f} available + "
+            f"${exposure:.2f} deployed = ${self.current_bankroll:.2f} total"
+        )
 
     # ── Kelly Criterion ───────────────────────────────────────────────
 
@@ -179,6 +191,13 @@ class RiskManager:
         }
         self.open_positions.append(position)
         self.current_bankroll -= sizing["total_cost"]
+
+        if config.DATABASE_URL:
+            try:
+                db.save_trade(position)
+            except Exception as e:
+                logger.error(f"DB save_trade failed: {e}")
+
         logger.info(
             f"Opened {sizing['direction'].upper()} position: "
             f"{sizing['num_shares']} shares @ ${sizing['cost_per_share']:.2f} "
@@ -216,6 +235,12 @@ class RiskManager:
         # Update peak
         if self.current_bankroll > self.peak_bankroll:
             self.peak_bankroll = self.current_bankroll
+
+        if config.DATABASE_URL:
+            try:
+                db.close_trade(market_id, outcome, settlement_price, pnl, pos["return_pct"])
+            except Exception as e:
+                logger.error(f"DB close_trade failed: {e}")
 
         logger.info(
             f"Closed position on {pos['question'][:50]}: "
@@ -282,27 +307,56 @@ class RiskManager:
     # ── Persistence ───────────────────────────────────────────────────
 
     def save_state(self, filepath: str = ""):
-        """Save risk manager state to disk."""
-        filepath = filepath or config.STATE_FILE
+        """Save risk manager state to DB (preferred) or disk."""
         state = {
             "bankroll": self.current_bankroll,
             "peak_bankroll": self.peak_bankroll,
             "daily_start": self.daily_start_bankroll,
             "open_positions": self.open_positions,
-            "closed_positions": self.closed_positions,
+            "closed_positions": self.closed_positions[-50:],  # Keep last 50
             "is_halted": self.is_halted,
             "halt_reason": self.halt_reason,
             "saved_at": datetime.now(timezone.utc).isoformat(),
         }
+
+        if config.DATABASE_URL:
+            try:
+                db.save_state("risk_manager", state)
+                return
+            except Exception as e:
+                logger.error(f"DB save_state failed, falling back to file: {e}")
+
+        filepath = filepath or config.STATE_FILE
         with open(filepath, "w") as f:
             json.dump(state, f, indent=2)
 
     def load_state(self, filepath: str = ""):
-        """Load risk manager state from disk."""
-        filepath = filepath or config.STATE_FILE
+        """Load risk manager state from DB (preferred) or disk."""
+        state = None
+
+        if config.DATABASE_URL:
+            try:
+                db.init_db()
+                state = db.load_state("risk_manager")
+                if state:
+                    logger.info("Loaded state from database")
+            except Exception as e:
+                logger.error(f"DB load_state failed, falling back to file: {e}")
+
+        if state is None:
+            filepath = filepath or config.STATE_FILE
+            try:
+                with open(filepath) as f:
+                    state = json.load(f)
+                logger.info("Loaded state from file")
+            except FileNotFoundError:
+                logger.info("No saved state found, starting fresh")
+                return
+            except (json.JSONDecodeError, KeyError) as e:
+                logger.error(f"Failed to load state: {e}")
+                return
+
         try:
-            with open(filepath) as f:
-                state = json.load(f)
             self.current_bankroll = state["bankroll"]
             self.peak_bankroll = state["peak_bankroll"]
             self.daily_start_bankroll = state["daily_start"]
@@ -312,7 +366,5 @@ class RiskManager:
             self.halt_reason = state.get("halt_reason", "")
             logger.info(f"Loaded state: bankroll=${self.current_bankroll:.2f}, "
                         f"{len(self.open_positions)} open positions")
-        except FileNotFoundError:
-            logger.info("No saved state found, starting fresh")
-        except (json.JSONDecodeError, KeyError) as e:
-            logger.error(f"Failed to load state: {e}")
+        except KeyError as e:
+            logger.error(f"Invalid state data: {e}")
