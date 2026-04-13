@@ -280,21 +280,8 @@ def run_trading_loop():
         risk_mgr.sync_bankroll(balance)
         logger.info(f"Bankroll from Polymarket: ${balance:,.2f}")
 
-    # Check if we need to scan or can reuse persisted results
-    # Never re-scan within MIN_RESCAN_SECONDS of the last scan, even across deploys
-    MIN_RESCAN_SECONDS = max(config.SCAN_INTERVAL_SECONDS, 900)  # At least 15 min
+    # Scan immediately, then every SCAN_INTERVAL_SECONDS for LLM analysis
     last_scan = 0
-    if config.DATABASE_URL:
-        persisted = db.get_latest_scan()
-        if persisted and persisted.get("scanned_at"):
-            elapsed = (datetime.now(timezone.utc) - persisted["scanned_at"]).total_seconds()
-            if elapsed < MIN_RESCAN_SECONDS:
-                # Pretend we just scanned, wait for the full interval
-                last_scan = time.time() - elapsed
-                logger.info(f"Last scan was {elapsed:.0f}s ago (< {MIN_RESCAN_SECONDS}s), "
-                            f"next scan in {MIN_RESCAN_SECONDS - elapsed:.0f}s")
-            else:
-                logger.info(f"Last scan was {elapsed:.0f}s ago, will scan on next cycle")
 
     last_scalp_check = 0
     last_order_check = 0
@@ -407,7 +394,7 @@ def run_trading_loop():
         except Exception as e:
             logger.error(f"State save error: {e}")
 
-        time.sleep(5)
+        time.sleep(1)
 
     # ── Graceful shutdown ─────────────────────────────────────────
     logger.info("Shutting down...")
