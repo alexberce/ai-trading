@@ -359,7 +359,7 @@ def get_latest_estimates() -> list[dict]:
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute("""
             SELECT market_id, question, category, market_prob, estimated_prob,
-                   edge, effective_edge, confidence, direction, has_edge, reasoning
+                   edge, effective_edge, confidence, direction, has_edge, reasoning, components
             FROM estimates
             WHERE scan_id = (SELECT MAX(id) FROM scan_results)
             ORDER BY ABS(edge) DESC
