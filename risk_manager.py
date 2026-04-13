@@ -44,8 +44,14 @@ class RiskManager:
         """Sync bankroll from exchange balance, accounting for open position costs."""
         exposure = self._total_exposure()
         self.current_bankroll = balance + exposure
+        if self.initial_bankroll == 0:
+            self.initial_bankroll = self.current_bankroll
         if self.current_bankroll > self.peak_bankroll:
             self.peak_bankroll = self.current_bankroll
+        # Reset daily tracking to avoid false halt triggers after sync
+        self.daily_start_bankroll = self.current_bankroll
+        self.is_halted = False
+        self.halt_reason = ""
         logger.info(
             f"Bankroll synced: ${balance:.2f} available + "
             f"${exposure:.2f} deployed = ${self.current_bankroll:.2f} total"

@@ -144,14 +144,25 @@ def export_dashboard_data(
     risk_mgr: RiskManager,
     opportunities: list,
     last_scan_time: str,
+    executor: Executor = None,
 ):
     """Export current state as JSON for the dashboard."""
+    # Merge bot-opened positions with live Polymarket positions
+    positions = list(risk_mgr.open_positions)
+    if executor:
+        live_positions = executor.get_positions()
+        # Add live positions that aren't already tracked by the bot
+        bot_tokens = {p.get("token_id") for p in positions}
+        for lp in live_positions:
+            if lp.get("token_id") not in bot_tokens:
+                positions.append(lp)
+
     data = {
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "last_scan": last_scan_time,
         "portfolio": risk_mgr.get_stats(),
-        "open_positions": risk_mgr.open_positions,
-        "closed_positions": risk_mgr.closed_positions[-20:],  # Last 20
+        "open_positions": positions,
+        "closed_positions": risk_mgr.closed_positions[-20:],
         "opportunities": [o.to_dict() for o in opportunities[:15]],
     }
     with open(config.DASHBOARD_DATA_FILE, "w") as f:
@@ -285,7 +296,7 @@ def run_trading_loop():
                             logger.info(f"Trade executed: {opp}")
 
                 scan_time = datetime.now(timezone.utc).isoformat()
-                export_dashboard_data(risk_mgr, opportunities, scan_time)
+                export_dashboard_data(risk_mgr, opportunities, scan_time, executor)
                 _health_state["last_scan"] = scan_time
                 _health_state["scan_count"] += 1
                 last_scan = now
@@ -313,7 +324,7 @@ def run_trading_loop():
     # ── Graceful shutdown ─────────────────────────────────────────
     logger.info("Shutting down...")
     risk_mgr.save_state()
-    export_dashboard_data(risk_mgr, opportunities, datetime.now(timezone.utc).isoformat())
+    export_dashboard_data(risk_mgr, opportunities, datetime.now(timezone.utc).isoformat(), executor)
     if is_leader and config.DATABASE_URL:
         db.release_leader_lock()
     logger.info("Shutdown complete.")

@@ -256,6 +256,48 @@ class Executor:
 
         return order
 
+    def get_positions(self) -> list[dict]:
+        """Fetch all open positions from Polymarket Data API."""
+        proxy_wallet = config.PROXY_WALLET_ADDRESS
+        if not proxy_wallet:
+            return []
+
+        try:
+            resp = self.session.get(
+                "https://data-api.polymarket.com/positions",
+                params={"user": proxy_wallet, "sizeThreshold": "0"},
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                positions = resp.json()
+                return [
+                    {
+                        "question": p.get("title", ""),
+                        "direction": p.get("outcome", "").lower(),
+                        "category": p.get("eventSlug", ""),
+                        "num_shares": p.get("size", 0),
+                        "entry_price": p.get("avgPrice", 0),
+                        "total_cost": p.get("initialValue", 0),
+                        "current_value": p.get("currentValue", 0),
+                        "pnl": p.get("cashPnl", 0),
+                        "return_pct": (p.get("percentPnl", 0) or 0) / 100,
+                        "cur_price": p.get("curPrice", 0),
+                        "market_id": p.get("conditionId", ""),
+                        "token_id": p.get("asset", ""),
+                        "end_date": p.get("endDate", ""),
+                        "icon": p.get("icon", ""),
+                        "opened_at": None,
+                        "edge_at_entry": 0,
+                        "source": "polymarket",
+                    }
+                    for p in positions
+                ]
+        except Exception as e:
+            logger.error(f"Failed to fetch positions: {e}")
+
+        return []
+
     def get_open_orders_summary(self) -> list[dict]:
         """Get summary of all pending orders."""
         return [o.to_dict() for o in self.pending_orders]
