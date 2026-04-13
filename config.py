@@ -29,6 +29,7 @@ PROXY_WALLET_ADDRESS = os.getenv("PROXY_WALLET_ADDRESS", "")  # Polymarket proxy
 
 # ─── Bankroll & Risk Management ──────────────────────────────────────
 BANKROLL = None  # Must be fetched from Polymarket at startup
+INITIAL_DEPOSIT = float(os.getenv("INITIAL_DEPOSIT", "300"))  # Total amount deposited
 
 # Kelly Criterion
 MAX_KELLY_FRACTION = 0.25      # Use quarter-Kelly (conservative)

@@ -105,7 +105,7 @@ def build_dashboard_payload() -> dict:
                 "scanned_markets": [], "all_markets": [], "banned_markets": []}
 
     total_value = balance.get("total", 0)
-    initial = balance.get("initial", total_value)
+    initial = config.INITIAL_DEPOSIT or balance.get("initial", total_value)
     total_exposure = sum(p.get("current_value", 0) or p.get("total_cost", 0) or 0 for p in positions)
     unrealized_pnl = sum(p.get("pnl", 0) or 0 for p in positions)
     realized_pnl = float(trade_stats.get("total_pnl", 0) or 0)

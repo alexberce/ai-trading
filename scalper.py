@@ -161,13 +161,20 @@ class Scalper:
 
             if reason:
                 logger.info(f"SCALP EXIT: {question[:40]} — {reason}")
-                floor_price = round(max(cur * 0.95, 0.01), 2)
                 try:
-                    order = self.executor.place_market_order(
+                    # Limit sell at take-profit price (entry + TP)
+                    # For SL/timeout, sell at current price to get out
+                    if "TP" in reason:
+                        sell_price = round(entry * (1 + config.SCALP_TAKE_PROFIT), 2)
+                    else:
+                        sell_price = round(cur, 2)
+
+                    order = self.executor.place_order(
                         token_id=token_id,
                         side="SELL",
-                        amount=shares,  # SELL: amount = shares
-                        price=floor_price,  # Min acceptable price (5% slippage)
+                        price=sell_price,
+                        size=int(shares),
+                        order_type="GTC",
                     )
                     if order:
                         actions.append({
@@ -448,6 +455,20 @@ class Scalper:
         }
 
         if order:
+            # Immediately place take-profit limit sell
+            tp_price = round(price * (1 + config.SCALP_TAKE_PROFIT), 2)
+            logger.info(f"  Placing TP sell at ${tp_price:.2f} (entry=${price:.2f} + {config.SCALP_TAKE_PROFIT:.0%})")
+            try:
+                self.executor.place_order(
+                    token_id=signal["token_id"],
+                    side="SELL",
+                    price=tp_price,
+                    size=num_shares,
+                    order_type="GTC",
+                )
+            except Exception as e:
+                logger.warning(f"  TP sell order failed: {e}")
+
             self._pending_orders[signal["token_id"]] = {
                 "question": mkt["question"],
                 "direction": signal["direction"],
