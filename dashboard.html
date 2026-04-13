@@ -132,7 +132,11 @@ body{background:var(--bg);color:var(--t);font-family:'Inter',system-ui,sans-seri
   <button class="tab" data-t="history">History (0)</button>
 </div>
 
+<div id="searchBar" style="display:none;margin-bottom:12px">
+  <input id="searchInput" type="text" placeholder="Search markets..." oninput="render()" style="width:100%;padding:10px 14px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--tw);font-size:13px;outline:none;font-family:inherit" />
+</div>
 <div id="content"></div>
+<div id="pagination" style="display:none;padding:12px 0;display:flex;justify-content:center;gap:8px"></div>
 <div class="footer"><span id="sseInfo">Connecting...</span><span id="updated"></span></div>
 
 </div>
@@ -145,7 +149,8 @@ const X=(s)=>{const d=document.createElement('div');d.textContent=s;return d.inn
 const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
 
 // ── State ──
-let data=null, tab='markets', expandedId=null;
+let data=null, tab='markets', expandedId=null, mktPage=0;
+const MKT_PER_PAGE=30;
 const activityLog=[];
 function addActivity(text,cls=''){activityLog.unshift({text,cls,t:Date.now()});if(activityLog.length>8)activityLog.pop();renderFeed()}
 
@@ -243,7 +248,7 @@ function renderMarket(m, idx){
     <div class="mkt-row">
       <div class="mkt-edge-bar" style="background:${barClr}"></div>
       <div class="mkt-body">
-        <div class="mkt-q">${X(m.question||'')}</div>
+        <div class="mkt-q"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--g);margin-right:6px;vertical-align:middle" title="AI analyzed"></span>${X(m.question||'')}</div>
         <div class="mkt-sub">${X((m.reasoning||'').substring(0,100))}</div>
       </div>
       <div class="mkt-metrics">
@@ -259,29 +264,27 @@ function renderMarket(m, idx){
 
 function renderMarketRow(m, idx){
   const e=m.edge||0;
-  const hasAnalysis=m.estimated_prob!=null;
-  const banned=(data.banned_markets||[]).some(b=>b.market_id===m.market_id);
+  const hasAnalysis=m._analyzed||m.estimated_prob!=null;
   const price=m.yes_price||m.market_prob||0;
   const liq=m.liquidity||0;
+  const analyzedDot=hasAnalysis?`<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--g);margin-right:6px;flex-shrink:0" title="AI analyzed"></span>`:'';
 
-  if(banned) return ''; // Hide banned markets
-
-  // If analyzed, show the full detail view
+  // Analyzed markets get the full expandable view
   if(hasAnalysis) return renderMarket(m, idx);
 
-  // Simple row for unanalyzed markets
-  return `<div class="mkt" style="opacity:0.7">
+  // Unanalyzed: clean row with price, liquidity, ban
+  return `<div class="mkt">
     <div class="mkt-row">
-      <div class="mkt-edge-bar" style="background:var(--t3)"></div>
+      <div class="mkt-edge-bar" style="background:var(--border)"></div>
       <div class="mkt-body">
-        <div class="mkt-q">${X(m.question||'')}</div>
-        <div class="mkt-sub">${m.category||''} &middot; Liq: ${$(liq)}</div>
+        <div class="mkt-q">${analyzedDot}${X(m.question||'')}</div>
+        <div class="mkt-sub">${m.category||''}</div>
       </div>
       <div class="mkt-metrics">
         <div class="mkt-m"><div class="mkt-m-label">Price</div><div class="mkt-m-val mono">${P(price,0)}</div></div>
         <div class="mkt-m"><div class="mkt-m-label">Liquidity</div><div class="mkt-m-val mono" style="font-size:12px">${$(liq)}</div></div>
       </div>
-      <button onclick="event.stopPropagation();banMarket('${X(m.market_id||m.id||'')}','${X(m.question||'')}')" style="background:none;color:var(--r);border:1px solid var(--r);border-radius:6px;padding:4px 10px;font-size:9px;font-weight:700;cursor:pointer;flex-shrink:0;margin-left:8px;opacity:0.6;transition:opacity .2s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.6">BAN</button>
+      <button onclick="event.stopPropagation();banMarket('${X(m.market_id||m.id||'')}','${X(m.question||'')}')" style="background:none;color:var(--t3);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:9px;font-weight:600;cursor:pointer;flex-shrink:0;margin-left:8px;transition:all .2s" onmouseover="this.style.color='var(--r)';this.style.borderColor='var(--r)'" onmouseout="this.style.color='var(--t3)';this.style.borderColor='var(--border)'">BAN</button>
     </div>
   </div>`;
 }
@@ -295,22 +298,23 @@ function renderPositions(positions){
     const pnl=p.pnl||p.unrealized_pnl||0;
     const dirCls=p.direction==='yes'?'badge-g':'badge-r';
     const typeCls=p.position_type==='scalp'?'<span class="badge badge-y">SCALP</span>':'';
-    return `<div class="pos">
+    return `<div class="pos" style="align-items:flex-start">
       <div style="flex:1;min-width:0">
-        <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
           <span class="badge ${dirCls}">${X(p.direction||'')}</span>${typeCls}
-          <span style="font-size:10px;color:var(--t3)">${X(p.category||'')}</span>
+          <span style="font-size:10px;color:var(--t2)">${X(p.category||'')}</span>
         </div>
-        <div style="font-size:13px;font-weight:600;color:var(--tw);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${X(p.question||'')}</div>
-        <div style="font-size:10px;color:var(--t3);margin-top:3px">${p.num_shares} shares @ ${$(p.entry_price)} ${p.opened_at?'&middot; '+ago(p.opened_at):''}</div>
+        <div style="font-size:14px;font-weight:600;color:var(--tw);line-height:1.3">${X(p.question||'')}</div>
+        <div style="font-size:11px;color:var(--t2);margin-top:6px">
+          ${p.num_shares} shares @ ${$(p.entry_price)}
+          ${p.cur_price?' &middot; Now: '+$(p.cur_price):''}
+          ${p.opened_at?' &middot; '+ago(p.opened_at):''}
+        </div>
       </div>
-      <div style="text-align:right">
-        <div style="font-size:10px;color:var(--t3)">VALUE / P&L</div>
-        <div class="mono" style="font-size:16px;font-weight:700">${$(p.current_value||p.total_cost)}</div>
-        <div class="mono" style="font-size:12px;color:${pnlClr(pnl)}">${pnl>=0?'+':''}${$(pnl)}</div>
-        ${p.token_id?`<div style="margin-top:8px;display:flex;gap:6px;justify-content:flex-end">
-          <button onclick="event.stopPropagation();closeTrade('${X(p.token_id)}',${p.num_shares},${p.cur_price||p.entry_price})" style="background:var(--rd);color:var(--r);border:1px solid var(--r);border-radius:6px;padding:4px 10px;font-size:10px;font-weight:600;cursor:pointer">SELL</button>
-        </div>`:''}
+      <div style="text-align:right;flex-shrink:0;margin-left:16px">
+        <div class="mono" style="font-size:18px;font-weight:700;color:var(--tw)">${$(p.current_value||p.total_cost)}</div>
+        <div class="mono" style="font-size:13px;font-weight:600;color:${pnlClr(pnl)};margin-top:2px">${pnl>=0?'+':''}${$(pnl)}</div>
+        ${p.token_id?`<button onclick="event.stopPropagation();closeTrade('${X(p.token_id)}',${p.num_shares},${p.cur_price||p.entry_price})" style="margin-top:8px;background:none;color:var(--r);border:1px solid var(--r);border-radius:6px;padding:5px 14px;font-size:10px;font-weight:700;cursor:pointer;opacity:0.7;transition:opacity .2s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">SELL</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -382,15 +386,42 @@ function render(){
   const el=document.getElementById('content');
   const progress=renderProgress(prog);
 
+  // Search & pagination
+  const searchBar=document.getElementById('searchBar');
+  const paginationEl=document.getElementById('pagination');
+  searchBar.style.display=tab==='markets'?'block':'none';
+  paginationEl.style.display=tab==='markets'?'flex':'none';
+
   if(tab==='markets'){
-    // Merge: show analyzed data where available, plain listing for rest
+    const q=(document.getElementById('searchInput')?.value||'').toLowerCase();
     const analyzedMap={};
     analyzed.forEach(a=>{analyzedMap[a.market_id]=a});
-    const merged=mkts.map(m=>{
+    const bannedSet=new Set((data.banned_markets||[]).map(b=>b.market_id));
+
+    let filtered=mkts.filter(m=>!bannedSet.has(m.market_id));
+    if(q) filtered=filtered.filter(m=>(m.question||'').toLowerCase().includes(q)||(m.category||'').toLowerCase().includes(q));
+
+    const totalPages=Math.ceil(filtered.length/MKT_PER_PAGE);
+    if(mktPage>=totalPages)mktPage=Math.max(0,totalPages-1);
+    const pageItems=filtered.slice(mktPage*MKT_PER_PAGE,(mktPage+1)*MKT_PER_PAGE);
+
+    const merged=pageItems.map(m=>{
       const a=analyzedMap[m.market_id||m.id];
-      return a?{...m,...a}:m;
+      return a?{...m,...a,_analyzed:true}:{...m,_analyzed:false};
     });
-    el.innerHTML=progress+(merged.length?merged.map((m,i)=>renderMarketRow(m,i)).join(''):'<div class="empty">Loading markets...</div>');
+
+    el.innerHTML=progress+(merged.length?merged.map((m,i)=>renderMarketRow(m,mktPage*MKT_PER_PAGE+i)).join(''):'<div class="empty">No markets found</div>');
+
+    // Pagination buttons
+    if(totalPages>1){
+      let pg='';
+      pg+=`<button onclick="mktPage=0;render()" style="background:var(--card);border:1px solid var(--border);color:var(--t2);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:11px" ${mktPage===0?'disabled':''}>&laquo;</button>`;
+      pg+=`<button onclick="mktPage=Math.max(0,mktPage-1);render()" style="background:var(--card);border:1px solid var(--border);color:var(--t2);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:11px" ${mktPage===0?'disabled':''}>Prev</button>`;
+      pg+=`<span class="mono" style="padding:4px 12px;font-size:11px;color:var(--t2)">${mktPage+1} / ${totalPages} (${filtered.length} markets)</span>`;
+      pg+=`<button onclick="mktPage=Math.min(${totalPages-1},mktPage+1);render()" style="background:var(--card);border:1px solid var(--border);color:var(--t2);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:11px" ${mktPage>=totalPages-1?'disabled':''}>Next</button>`;
+      pg+=`<button onclick="mktPage=${totalPages-1};render()" style="background:var(--card);border:1px solid var(--border);color:var(--t2);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:11px" ${mktPage>=totalPages-1?'disabled':''}>&raquo;</button>`;
+      paginationEl.innerHTML=pg;
+    }else{paginationEl.innerHTML=`<span style="font-size:11px;color:var(--t3)">${filtered.length} markets</span>`}
   }else if(tab==='opportunities'){
     el.innerHTML=opps.length?opps.map((m,i)=>renderMarket(m,100+i)).join(''):'<div class="empty">No trading signals found</div>';
   }else if(tab==='positions'){

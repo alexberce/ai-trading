@@ -115,8 +115,15 @@ def build_dashboard_payload() -> dict:
         except Exception as e:
             logger.warning(f"DB read for dashboard failed: {e}")
 
-    # All markets (for display, not just LLM-analyzed ones)
-    all_markets = _state.get("all_markets", [])
+    # All markets from DB (persisted across deploys)
+    all_markets = []
+    if config.DATABASE_URL:
+        try:
+            all_markets = db.get_all_markets()
+        except Exception:
+            pass
+    if not all_markets:
+        all_markets = _state.get("all_markets", [])
 
     return {
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -346,11 +353,11 @@ def run_trading_loop():
     last_market_refresh = 0
 
     def refresh_all_markets():
-        """Fetch all markets for the dashboard — lightweight, no LLM."""
+        """Fetch markets and persist to DB."""
         nonlocal last_market_refresh
         try:
             markets = fetcher.fetch_active_markets(limit=500)
-            _state["all_markets"] = [
+            market_dicts = [
                 {
                     "market_id": m.id,
                     "condition_id": m.condition_id,
@@ -364,8 +371,11 @@ def run_trading_loop():
                 }
                 for m in markets
             ]
+            if config.DATABASE_URL:
+                db.save_markets(market_dicts)
+            _state["all_markets"] = market_dicts
             last_market_refresh = time.time()
-            logger.info(f"Refreshed {len(markets)} markets for dashboard")
+            logger.info(f"Refreshed {len(markets)} markets")
         except Exception as e:
             logger.error(f"Market refresh error: {e}")
 

@@ -73,6 +73,7 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_trades_market ON trades (market_id)
         """)
     _init_scan_tables()
+    _init_markets_table()
     _init_banned_table()
     logger.info("Database initialized")
 
@@ -398,6 +399,75 @@ def get_scan_progress() -> Optional[dict]:
 
 
 # ─── Banned Markets ──────────────────────────────────────────────────
+
+# ─── Markets Persistence ─────────────────────────────────────────────
+
+def _init_markets_table():
+    """Create markets table. Called from init_db()."""
+    conn = get_connection()
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS markets (
+                market_id TEXT PRIMARY KEY,
+                condition_id TEXT,
+                question TEXT,
+                category TEXT,
+                yes_price DOUBLE PRECISION,
+                no_price DOUBLE PRECISION,
+                liquidity DOUBLE PRECISION,
+                volume DOUBLE PRECISION,
+                end_date TEXT,
+                active BOOLEAN DEFAULT TRUE,
+                first_seen_at TIMESTAMPTZ DEFAULT NOW(),
+                last_seen_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+
+
+def save_markets(markets: list[dict]):
+    """Upsert markets — new ones get added, existing ones get updated."""
+    if not markets:
+        return
+    conn = get_connection()
+    with conn.cursor() as cur:
+        psycopg2.extras.execute_values(
+            cur,
+            """INSERT INTO markets
+               (market_id, condition_id, question, category, yes_price, no_price,
+                liquidity, volume, end_date, active)
+               VALUES %s
+               ON CONFLICT (market_id) DO UPDATE SET
+                 yes_price = EXCLUDED.yes_price,
+                 no_price = EXCLUDED.no_price,
+                 liquidity = EXCLUDED.liquidity,
+                 volume = EXCLUDED.volume,
+                 active = EXCLUDED.active,
+                 last_seen_at = NOW()""",
+            [
+                (m.get("market_id", ""), m.get("condition_id", ""),
+                 m.get("question", ""), m.get("category", ""),
+                 m.get("yes_price", 0), m.get("no_price", 0),
+                 m.get("liquidity", 0), m.get("volume", 0),
+                 m.get("end_date", ""), True)
+                for m in markets
+            ],
+        )
+
+
+def get_all_markets(active_only: bool = True) -> list[dict]:
+    """Get all markets from DB."""
+    conn = get_connection()
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        where = "WHERE active = TRUE" if active_only else ""
+        cur.execute(f"""
+            SELECT market_id, condition_id, question, category,
+                   yes_price, no_price, liquidity, volume, end_date,
+                   first_seen_at, last_seen_at
+            FROM markets {where}
+            ORDER BY liquidity DESC NULLS LAST
+        """)
+        return [dict(row) for row in cur.fetchall()]
+
 
 def _init_banned_table():
     """Create banned_markets table. Called from init_db()."""
