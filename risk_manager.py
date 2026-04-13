@@ -41,21 +41,21 @@ class RiskManager:
         self.halt_reason = ""
 
     def sync_bankroll(self, balance: float):
-        """Sync bankroll from exchange balance, accounting for open position costs."""
-        exposure = self._total_exposure()
-        self.current_bankroll = balance + exposure
+        """
+        Sync bankroll from Polymarket.
+        balance = total portfolio value (cash + positions) from get_balance().
+        This is the source of truth — no need to add exposure on top.
+        """
+        self.current_bankroll = balance
         if self.initial_bankroll == 0:
-            self.initial_bankroll = self.current_bankroll
-        if self.current_bankroll > self.peak_bankroll:
-            self.peak_bankroll = self.current_bankroll
+            self.initial_bankroll = balance
+        if balance > self.peak_bankroll:
+            self.peak_bankroll = balance
         # Reset daily tracking to avoid false halt triggers after sync
-        self.daily_start_bankroll = self.current_bankroll
+        self.daily_start_bankroll = balance
         self.is_halted = False
         self.halt_reason = ""
-        logger.info(
-            f"Bankroll synced: ${balance:.2f} available + "
-            f"${exposure:.2f} deployed = ${self.current_bankroll:.2f} total"
-        )
+        logger.info(f"Bankroll synced from Polymarket: ${balance:.2f}")
 
     # ── Kelly Criterion ───────────────────────────────────────────────
 
@@ -278,6 +278,7 @@ class RiskManager:
             (self.peak_bankroll - self.current_bankroll) / self.peak_bankroll
             if self.peak_bankroll > 0 else 0
         )
+        drawdown = max(0, drawdown)  # Can't be negative
 
         wins = [p for p in self.closed_positions if p.get("pnl", 0) > 0]
         losses = [p for p in self.closed_positions if p.get("pnl", 0) <= 0]
