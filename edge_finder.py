@@ -156,7 +156,7 @@ class EdgeFinder:
         all_opps = self.scan()
         return all_opps[:n]
 
-    def should_trade(self, opportunity: Opportunity) -> bool:
+    def should_trade(self, opportunity: Opportunity, existing_positions: list = None) -> bool:
         """
         Final check before trading. Extra validation layer.
         """
@@ -175,5 +175,15 @@ class EdgeFinder:
         # Verify market is still active
         if not opportunity.market.active or opportunity.market.closed:
             return False
+
+        # Don't open duplicate positions in the same market
+        if existing_positions:
+            market_id = opportunity.market.id
+            condition_id = opportunity.market.condition_id
+            for pos in existing_positions:
+                pos_market = pos.get("market_id", "")
+                if pos_market == market_id or pos_market == condition_id:
+                    logger.debug(f"Skipping {market_id[:20]} — already have a position")
+                    return False
 
         return True

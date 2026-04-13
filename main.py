@@ -347,8 +347,15 @@ def run_trading_loop():
 
                 # Execute top opportunities (leader only)
                 if is_leader:
+                    # Get all existing positions to avoid duplicates
+                    existing = list(risk_mgr.open_positions)
+                    try:
+                        existing += executor.get_positions()
+                    except Exception:
+                        pass
+
                     for opp in opportunities[:3]:
-                        if not finder.should_trade(opp):
+                        if not finder.should_trade(opp, existing):
                             continue
                         token_id = (
                             opp.market.yes_token_id
