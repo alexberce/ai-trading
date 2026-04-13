@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prediction Market Trader</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #0a0e17; --card: #111827; --card-alt: #161f31;
+    --border: #1e2a3a; --border-bright: #2a3f5f;
+    --text: #c9d1d9; --text-dim: #6b7b8d; --text-bright: #e6edf3;
+    --accent: #00d4aa; --accent-dim: #00d4aa33;
+    --red: #ff5c5c; --red-dim: #ff5c5c22;
+    --yellow: #f0b429; --yellow-dim: #f0b42922;
+    --blue: #58a6ff;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', -apple-system, sans-serif; padding: 24px 28px; min-height: 100vh; }
+  .mono { font-family: 'JetBrains Mono', 'SF Mono', monospace; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; }
+  .label { font-size: 11px; color: var(--text-dim); letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 4px; }
+  .value { font-size: 26px; font-weight: 700; }
+  .value-sm { font-size: 18px; font-weight: 600; }
+  .green { color: var(--accent); }
+  .red { color: var(--red); }
+  .dim { color: var(--text-dim); }
+  .bright { color: var(--text-bright); }
+
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; }
+  .header-title { display: flex; align-items: center; gap: 12px; }
+  .status-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .status-dot.active { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .status-dot.halted { background: var(--red); box-shadow: 0 0 8px var(--red); }
+  h1 { font-size: 22px; font-weight: 700; color: var(--text-bright); letter-spacing: -0.02em; }
+  .subtitle { font-size: 12px; color: var(--text-dim); margin-top: 4px; margin-left: 22px; }
+  .refresh-btn {
+    background: transparent; border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text-dim); padding: 8px 16px; font-size: 13px; cursor: pointer; transition: all 0.2s;
+  }
+  .refresh-btn:hover { border-color: var(--border-bright); color: var(--text); }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 24px; }
+
+  .tabs { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+  .tab-btn {
+    background: transparent; border: none; border-bottom: 2px solid transparent;
+    color: var(--text-dim); padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+  }
+  .tab-btn.active { border-bottom-color: var(--accent); color: var(--text-bright); }
+  .tab-btn:hover { color: var(--text); }
+
+  .opp-card { display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: start; }
+  .badge {
+    font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+    text-transform: uppercase; letter-spacing: 0.08em; display: inline-block;
+  }
+  .badge-yes { background: var(--accent-dim); color: var(--accent); }
+  .badge-no { background: var(--red-dim); color: var(--red); }
+  .badge-win { background: var(--accent-dim); color: var(--accent); }
+  .badge-loss { background: var(--red-dim); color: var(--red); }
+  .badge-cat { color: var(--text-dim); padding: 2px 8px; border-radius: 4px; background: var(--card-alt); font-size: 10px; display: inline-block; }
+
+  .opp-right { text-align: right; min-width: 140px; }
+  .price-row { display: flex; gap: 16px; justify-content: flex-end; margin-bottom: 8px; }
+  .metric-row { display: flex; gap: 12px; justify-content: flex-end; }
+  .metric { text-align: right; }
+  .metric .label { font-size: 10px; }
+  .metric .val { font-size: 14px; font-weight: 700; }
+
+  .pos-card { display: flex; justify-content: space-between; align-items: center; }
+  .items { display: flex; flex-direction: column; gap: 8px; }
+  .empty { padding: 40px; text-align: center; color: var(--text-dim); }
+
+  .footer {
+    margin-top: 32px; padding: 16px 0; border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--text-dim); display: flex; justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="header-title">
+      <div class="status-dot active" id="statusDot"></div>
+      <h1>Prediction Market Trader</h1>
+    </div>
+    <div class="subtitle" id="subtitle">Loading...</div>
+  </div>
+  <button class="refresh-btn" id="refreshBtn" onclick="loadData()">Refresh</button>
+</div>
+
+<div class="stats-grid" id="statsGrid"></div>
+
+<div class="tabs" id="tabs">
+  <button class="tab-btn active" data-tab="opportunities" onclick="switchTab('opportunities')">Opportunities (0)</button>
+  <button class="tab-btn" data-tab="positions" onclick="switchTab('positions')">Open (0)</button>
+  <button class="tab-btn" data-tab="history" onclick="switchTab('history')">History (0)</button>
+</div>
+
+<div id="content"></div>
+
+<div class="footer">
+  <span>Data updates every 30s</span>
+  <span id="updatedAt"></span>
+</div>
+
+<script>
+const pct = (v, d=1) => (v * 100).toFixed(d) + '%';
+const usd = (v) => '$' + Number(v).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const ago = (iso) => {
+  if (!iso) return '\u2014';
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return s + 's ago';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  return Math.floor(s / 3600) + 'h ago';
+};
+const pnlColor = (v) => v > 0 ? 'green' : v < 0 ? 'red' : '';
+const edgeColor = (e) => e > 0.12 ? 'green' : e > 0.08 ? 'color:var(--yellow)' : 'dim';
+const edgeStyle = (e) => {
+  const a = Math.abs(e);
+  if (a > 0.12) return 'color:var(--accent)';
+  if (a > 0.08) return 'color:var(--yellow)';
+  return 'color:var(--text-dim)';
+};
+const ddColor = (d) => d > 0.10 ? 'red' : d > 0.05 ? 'color:var(--yellow)' : '';
+const esc = (s) => {
+  const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
+};
+
+let data = null;
+let currentTab = 'opportunities';
+
+function renderStats(p) {
+  const items = [
+    {label: 'Bankroll', value: usd(p.bankroll), cls: 'value mono bright'},
+    {label: 'Total Return', value: (p.total_return >= 0 ? '+' : '') + pct(p.total_return), cls: 'value mono ' + pnlColor(p.total_return)},
+    {label: 'Realized P&L', value: (p.total_pnl_closed >= 0 ? '+' : '') + usd(p.total_pnl_closed), cls: 'value-sm mono ' + pnlColor(p.total_pnl_closed)},
+    {label: 'Exposure', value: pct(p.exposure_pct, 0), cls: 'value-sm mono', sub: usd(p.total_exposure) + ' deployed'},
+    {label: 'Drawdown', value: pct(p.drawdown), cls: 'value-sm mono' + (p.drawdown > 0.10 ? ' red' : p.drawdown > 0.05 ? '' : ''), style: ddColor(p.drawdown)},
+    {label: 'Win Rate', value: p.closed_trades > 0 ? pct(p.win_rate, 0) : '\u2014', cls: 'value-sm mono', sub: p.wins + 'W / ' + p.losses + 'L'},
+  ];
+  document.getElementById('statsGrid').innerHTML = items.map(i =>
+    `<div class="card"><div class="label">${i.label}</div><div class="${i.cls}" ${i.style ? 'style="'+i.style+'"' : ''}>${i.value}</div>${i.sub ? '<div style="font-size:11px;color:var(--text-dim)">'+i.sub+'</div>' : ''}</div>`
+  ).join('');
+}
+
+function renderOpportunities(opps) {
+  if (!opps.length) return '<div class="empty">No opportunities found. Waiting for scan...</div>';
+  return '<div class="items">' + opps.map(o => {
+    const dirCls = o.direction === 'yes' ? 'badge-yes' : 'badge-no';
+    const timeStr = o.hours_to_resolution ? (o.hours_to_resolution < 24 ? Math.round(o.hours_to_resolution) + 'h' : Math.round(o.hours_to_resolution / 24) + 'd') : '';
+    return `<div class="card opp-card">
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span class="badge ${dirCls}">${esc(o.direction)}</span>
+          <span class="badge-cat">${esc(o.category)}</span>
+          ${timeStr ? '<span style="font-size:10px;color:var(--text-dim)">' + timeStr + '</span>' : ''}
+        </div>
+        <div style="font-size:14px;font-weight:600;color:var(--text-bright);margin-bottom:6px;line-height:1.4">${esc(o.question)}</div>
+        <div style="font-size:12px;color:var(--text-dim);line-height:1.5">${esc(o.reasoning || '')}</div>
+      </div>
+      <div class="opp-right">
+        <div class="price-row">
+          <div><div class="label">MARKET</div><div class="mono" style="font-size:18px;font-weight:700">${pct(o.market_price, 0)}</div></div>
+          <div style="color:var(--text-dim);font-size:18px;line-height:28px">\u2192</div>
+          <div><div class="label">ESTIMATE</div><div class="mono green" style="font-size:18px;font-weight:700">${pct(o.estimated_prob, 0)}</div></div>
+        </div>
+        <div class="metric-row">
+          <div class="metric"><div class="label">EDGE</div><div class="val mono" style="${edgeStyle(o.edge)}">${o.edge >= 0 ? '+' : ''}${pct(o.edge)}</div></div>
+          <div class="metric"><div class="label">SCORE</div><div class="val mono">${o.score != null ? o.score.toFixed(1) : '\u2014'}</div></div>
+          <div class="metric"><div class="label">SIZE</div><div class="val mono">${o.sizing?.total_cost ? usd(o.sizing.total_cost) : '\u2014'}</div></div>
+        </div>
+      </div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function renderPositions(positions) {
+  if (!positions.length) return '<div class="empty">No open positions.</div>';
+  return '<div class="items">' + positions.map(pos => {
+    const dirCls = pos.direction === 'yes' ? 'badge-yes' : 'badge-no';
+    return `<div class="card pos-card">
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span class="badge ${dirCls}">${esc(pos.direction)}</span>
+          <span style="font-size:10px;color:var(--text-dim)">${esc(pos.category || '')}</span>
+        </div>
+        <div style="font-size:13px;font-weight:600;color:var(--text-bright)">${esc(pos.question)}</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Opened ${ago(pos.opened_at)} &middot; Entry edge: ${pct(Math.abs(pos.edge_at_entry || 0))}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;color:var(--text-dim)">COST</div>
+        <div class="mono" style="font-size:16px;font-weight:700">${usd(pos.total_cost)}</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">${pos.num_shares} shares @ ${usd(pos.entry_price)}</div>
+      </div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function renderHistory(positions) {
+  if (!positions.length) return '<div class="empty">No closed trades yet.</div>';
+  return '<div class="items">' + [...positions].reverse().map(pos => {
+    const win = (pos.pnl || 0) >= 0;
+    return `<div class="card pos-card">
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span class="badge ${win ? 'badge-win' : 'badge-loss'}">${win ? 'WIN' : 'LOSS'}</span>
+          <span style="font-size:10px;color:var(--text-dim)">${esc((pos.direction || '').toUpperCase())}</span>
+        </div>
+        <div style="font-size:13px;font-weight:600;color:var(--text-bright)">${esc(pos.question)}</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Closed ${ago(pos.closed_at)} &middot; Held since ${ago(pos.opened_at)}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;color:var(--text-dim)">P&L</div>
+        <div class="mono ${pnlColor(pos.pnl || 0)}" style="font-size:18px;font-weight:700">${(pos.pnl || 0) >= 0 ? '+' : ''}${usd(pos.pnl || 0)}</div>
+        <div class="mono ${pnlColor(pos.return_pct || 0)}" style="font-size:11px;margin-top:2px">${(pos.return_pct || 0) >= 0 ? '+' : ''}${pct(pos.return_pct || 0)}</div>
+      </div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  render();
+}
+
+function render() {
+  if (!data) return;
+  const p = data.portfolio || {};
+  const opps = data.opportunities || [];
+  const openPos = data.open_positions || [];
+  const closedPos = data.closed_positions || [];
+
+  // Status
+  const dot = document.getElementById('statusDot');
+  dot.className = 'status-dot ' + (p.is_halted ? 'halted' : 'active');
+  document.getElementById('subtitle').textContent =
+    (p.is_halted ? 'HALTED: ' + p.halt_reason : 'System active') + ' \u00b7 Last scan ' + ago(data.last_scan);
+
+  // Stats
+  renderStats(p);
+
+  // Tabs
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    if (b.dataset.tab === 'opportunities') b.textContent = 'Opportunities (' + opps.length + ')';
+    if (b.dataset.tab === 'positions') b.textContent = 'Open (' + openPos.length + ')';
+    if (b.dataset.tab === 'history') b.textContent = 'History (' + closedPos.length + ')';
+  });
+
+  // Content
+  const el = document.getElementById('content');
+  if (currentTab === 'opportunities') el.innerHTML = renderOpportunities(opps);
+  else if (currentTab === 'positions') el.innerHTML = renderPositions(openPos);
+  else el.innerHTML = renderHistory(closedPos);
+
+  document.getElementById('updatedAt').textContent = 'Updated ' + ago(data.updated_at);
+}
+
+async function loadData() {
+  const btn = document.getElementById('refreshBtn');
+  btn.textContent = 'Refreshing...';
+  btn.style.opacity = '0.5';
+  try {
+    const resp = await fetch('/api/dashboard');
+    if (resp.ok) { data = await resp.json(); render(); }
+  } catch (e) { console.error('Failed to load data:', e); }
+  setTimeout(() => { btn.textContent = 'Refresh'; btn.style.opacity = '1'; }, 400);
+}
+
+loadData();
+setInterval(loadData, 30000);
+</script>
+</body>
+</html>

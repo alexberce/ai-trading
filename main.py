@@ -58,32 +58,73 @@ _health_state = {
 
 
 class HealthHandler(BaseHTTPRequestHandler):
-    """Lightweight HTTP handler for /health and /status endpoints."""
+    """HTTP handler for dashboard, health check, and API endpoints."""
 
     def do_GET(self):
-        if self.path == "/health":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok"}).encode())
+        if self.path == "/":
+            self._serve_dashboard()
+        elif self.path == "/health":
+            self._json_response({"status": "ok"})
         elif self.path == "/status":
             stats = {}
             if _health_state["risk_mgr"]:
                 stats = _health_state["risk_mgr"].get_stats()
-            body = {
+            self._json_response({
                 "status": "ok",
                 "started_at": _health_state["started_at"],
                 "last_scan": _health_state["last_scan"],
                 "scan_count": _health_state["scan_count"],
                 "portfolio": stats,
-            }
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps(body, indent=2).encode())
+            })
+        elif self.path == "/api/dashboard":
+            self._serve_dashboard_data()
         else:
             self.send_response(404)
             self.end_headers()
+
+    def _serve_dashboard(self):
+        try:
+            import os
+            html_path = os.path.join(os.path.dirname(__file__), "dashboard.html")
+            with open(html_path, "rb") as f:
+                content = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+        except FileNotFoundError:
+            self._json_response({"status": "ok", "message": "Dashboard HTML not found"})
+
+    def _serve_dashboard_data(self):
+        try:
+            with open(config.DASHBOARD_DATA_FILE, "r") as f:
+                content = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(content.encode())
+        except FileNotFoundError:
+            self._json_response({
+                "updated_at": None, "last_scan": None,
+                "portfolio": {
+                    "bankroll": 0, "initial_bankroll": 0, "total_return": 0,
+                    "total_pnl_closed": 0, "peak_bankroll": 0, "drawdown": 0,
+                    "open_positions": 0, "total_exposure": 0, "exposure_pct": 0,
+                    "closed_trades": 0, "wins": 0, "losses": 0, "win_rate": 0,
+                    "avg_win": 0, "avg_loss": 0, "is_halted": False, "halt_reason": "",
+                },
+                "open_positions": [], "closed_positions": [], "opportunities": [],
+            })
+
+    def _json_response(self, data):
+        body = json.dumps(data, indent=2).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def log_message(self, format, *args):
         pass  # Suppress default request logging
