@@ -35,7 +35,15 @@ class Scalper:
         self._price_history: dict[str, list[tuple[float, float]]] = {}  # market_id -> [(timestamp, price)]
         self._HISTORY_WINDOW = 300  # Keep 5 minutes of history
         self._pending_orders: dict[str, dict] = {}  # token_id -> order info
-        self._traded_markets: set[str] = set()  # market questions we've traded (never trade same market twice)
+        self._traded_markets: set[str] = set()  # loaded from DB on init
+        # Load existing positions so we never trade their markets again
+        try:
+            if config.DATABASE_URL:
+                for p in db.get_live_positions():
+                    self._traded_markets.add((p.get("question", "")).lower().strip())
+                logger.info(f"Scalper loaded {len(self._traded_markets)} traded markets from DB")
+        except Exception:
+            pass
 
     def tick(self) -> list[dict]:
         """Run one scalp cycle. Called every SCALP_SCAN_INTERVAL seconds."""
