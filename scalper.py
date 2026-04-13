@@ -406,9 +406,9 @@ class Scalper:
         order = self.executor.place_order(
             token_id=signal["token_id"],
             side="BUY",
-            price=round(price, 2),
+            price=round(price + 0.01, 2),  # Bid 1 cent above to improve fill chance
             size=num_shares,
-            order_type="FAK",  # Fill what's available, cancel rest — no stuck orders
+            order_type="GTC",  # Limit order
         )
 
         # Track attempt regardless of success to prevent retry spam
