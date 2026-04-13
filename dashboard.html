@@ -58,12 +58,11 @@ body{background:var(--bg);color:var(--t);font-family:'Inter',system-ui,sans-seri
 /* ── Market Rows ── */
 .mkt{background:var(--card);border:1px solid var(--border);border-radius:10px;margin-bottom:6px;cursor:pointer;transition:all .15s;overflow:hidden}
 .mkt:hover{border-color:var(--border-hi);background:var(--card-hover)}
-.mkt-row{display:flex;align-items:center;padding:12px 16px;gap:12px}
-.mkt-edge-bar{width:4px;border-radius:2px;align-self:stretch;min-height:36px;flex-shrink:0}
+.mkt-row{display:flex;align-items:center;padding:14px 16px;gap:16px}
 .mkt-body{flex:1;min-width:0}
 .mkt-q{font-size:13px;font-weight:600;color:var(--tw);line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mkt-sub{font-size:11px;color:var(--t3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mkt-metrics{display:flex;gap:20px;flex-shrink:0}
+.mkt-stats{flex-shrink:0;display:grid;grid-template-columns:repeat(3,auto);gap:4px 20px}
 .mkt-m{text-align:right}
 .mkt-m-label{font-size:9px;color:var(--t3);letter-spacing:.06em;text-transform:uppercase;font-weight:600}
 .mkt-m-val{font-size:15px;font-weight:700;margin-top:1px}
@@ -178,114 +177,52 @@ function renderFeed(){
 }
 
 // ── Render: Market Row + Detail ──
-function renderMarket(m, idx){
-  const e=m.edge||0, ae=Math.abs(e);
-  const isExp=expandedId===idx;
-  const barClr=edgeClr(e);
-  const comp=m.components||{};
-  const llm=comp.llm_signals||null;
-
-  let detail='';
-  if(isExp){
-    // Prob comparison bar
-    const mp=m.market_prob||0, ep=m.estimated_prob||0;
-    const probBar=`<div class="prob-bar">
-      <span class="mono" style="font-size:11px;color:var(--t2);width:60px">Market</span>
-      <div class="prob-track"><div class="prob-fill" style="width:${mp*100}%;background:var(--t3)"></div></div>
-      <span class="mono" style="font-size:12px;font-weight:700;width:45px;text-align:right">${P(mp,0)}</span>
-    </div><div class="prob-bar">
-      <span class="mono" style="font-size:11px;color:var(--g);width:60px">AI Est.</span>
-      <div class="prob-track"><div class="prob-fill" style="width:${ep*100}%;background:var(--g)"></div></div>
-      <span class="mono" style="font-size:12px;font-weight:700;width:45px;text-align:right;color:var(--g)">${P(ep,0)}</span>
-    </div>`;
-    if(llm){
-      const lp=llm.llm_probability||0;
-      detail+=`<div class="prob-bar">
-        <span class="mono" style="font-size:11px;color:var(--b);width:60px">LLM</span>
-        <div class="prob-track"><div class="prob-fill" style="width:${lp*100}%;background:var(--b)"></div></div>
-        <span class="mono" style="font-size:12px;font-weight:700;width:45px;text-align:right;color:var(--b)">${P(lp,0)}</span>
-      </div>`;
-    }
-
-    // Components
-    const comps=[
-      {l:'FLB',v:comp.flb_correction,base:mp},
-      {l:'Time',v:comp.time_decay},
-      {l:'Liquidity',v:comp.liquidity_signal},
-      {l:'Volume',v:comp.volume_momentum},
-    ];
-    let compHtml=comps.filter(c=>c.v!==undefined&&c.v!==null).map(c=>{
-      const val=typeof c.v==='number'?(c.base?c.v-c.base:c.v):0;
-      const w=clamp(Math.abs(val)*500,2,100);
-      const clr=val>0?'var(--g)':val<0?'var(--r)':'var(--t3)';
-      return `<div class="comp-row"><span class="comp-label">${c.l}</span><div class="comp-bar-track"><div class="comp-bar-fill" style="width:${w}%;background:${clr};left:${val<0?100-w:50}%"></div></div><span class="comp-val mono">${val>=0?'+':''}${(val*100).toFixed(1)}%</span></div>`;
-    }).join('');
-
-    // LLM section
-    let llmHtml='';
-    if(llm){
-      llmHtml=`<div class="detail-section"><h3>AI Analysis</h3>
-        <div style="font-size:12px;color:var(--tw);line-height:1.5;margin-bottom:10px">${X(llm.llm_reasoning||'')}</div>
-        <div style="display:flex;gap:16px;font-size:11px">
-          <span>Probability: <span class="mono" style="color:var(--b);font-weight:700">${P(llm.llm_probability||0,0)}</span></span>
-          <span>Confidence: <span class="mono" style="font-weight:700">${P(llm.llm_confidence||0,0)}</span></span>
-        </div>
-        ${llm.web_context?'<div style="margin-top:10px"><h3 style="margin-bottom:6px">Web Context</h3><div class="web-ctx">'+X(llm.web_context)+'</div></div>':''}
-      </div>`;
-    }
-
-    detail=`<div class="detail open"><div class="detail-inner">
-      <div class="detail-grid">
-        <div class="detail-section"><h3>Probability Comparison</h3>${probBar}${detail}</div>
-        <div class="detail-section"><h3>Signal Components</h3>${compHtml||'<div style="color:var(--t3);font-size:12px">No component data</div>'}</div>
-        ${llmHtml?'<div class="detail-full">'+llmHtml+'</div>':''}
-        <div class="detail-section detail-full"><h3>Full Reasoning</h3><div style="font-size:12px;color:var(--t2);line-height:1.6">${X(m.reasoning||'No reasoning available')}</div></div>
-      </div>
-    </div></div>`;
-  }
-
-  return `<div class="mkt" onclick="toggle(${idx})">
-    <div class="mkt-row">
-      <div class="mkt-edge-bar" style="background:${barClr}"></div>
-      <div class="mkt-body">
-        <div class="mkt-q"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--g);margin-right:6px;vertical-align:middle" title="AI analyzed"></span>${X(m.question||'')}</div>
-        <div class="mkt-sub">${X((m.reasoning||'').substring(0,100))}</div>
-      </div>
-      <div class="mkt-metrics">
-        <div class="mkt-m"><div class="mkt-m-label">Current Price</div><div class="mkt-m-val mono">${P(m.market_prob||m.market_price||0,0)}</div></div>
-        <div class="mkt-m"><div class="mkt-m-label">AI Fair Value</div><div class="mkt-m-val mono" style="color:var(--g)">${P(m.estimated_prob||0,0)}</div></div>
-        <div class="mkt-m"><div class="mkt-m-label">Mispricing</div><div class="mkt-m-val mono" style="color:${edgeClr(e)}">${e>=0?'+':''}${P(e)}</div></div>
-        <div class="mkt-m"><div class="mkt-m-label">AI Certainty</div><div class="mkt-m-val mono">${P(m.confidence||0,0)}</div></div>
-      </div>
-      <button onclick="event.stopPropagation();banMarket('${X(m.market_id||'')}','${X(m.question||'')}')" style="background:none;color:var(--r);border:1px solid var(--r);border-radius:6px;padding:4px 10px;font-size:9px;font-weight:700;cursor:pointer;flex-shrink:0;margin-left:8px;opacity:0.6;transition:opacity .2s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.6">BAN</button>
-    </div>${detail}
-  </div>`;
-}
-
 function renderMarketRow(m, idx){
   const e=m.edge||0;
-  const hasAnalysis=m._analyzed||m.estimated_prob!=null;
+  const hasAI=m._analyzed||m.estimated_prob!=null;
   const price=m.yes_price||m.market_prob||0;
   const liq=m.liquidity||0;
-  const analyzedDot=hasAnalysis?`<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--g);margin-right:6px;flex-shrink:0" title="AI analyzed"></span>`:'';
+  const isExp=expandedId===idx;
+  const comp=m.components||{};
+  const llm=comp.llm_signals||null;
+  const barClr=hasAI?edgeClr(e):'var(--border)';
 
-  // Analyzed markets get the full expandable view
-  if(hasAnalysis) return renderMarket(m, idx);
+  // Expandable detail panel (only if analyzed)
+  let detail='';
+  if(isExp && hasAI){
+    const mp=m.market_prob||price, ep=m.estimated_prob||0;
+    const probBar=`<div class="prob-bar"><span class="mono" style="font-size:11px;color:var(--t2);width:60px">Market</span><div class="prob-track"><div class="prob-fill" style="width:${mp*100}%;background:var(--t3)"></div></div><span class="mono" style="font-size:12px;font-weight:700;width:45px;text-align:right">${P(mp,0)}</span></div><div class="prob-bar"><span class="mono" style="font-size:11px;color:var(--g);width:60px">AI Est.</span><div class="prob-track"><div class="prob-fill" style="width:${ep*100}%;background:var(--g)"></div></div><span class="mono" style="font-size:12px;font-weight:700;width:45px;text-align:right;color:var(--g)">${P(ep,0)}</span></div>`;
+    let llmBar='';if(llm){const lp=llm.llm_probability||0;llmBar=`<div class="prob-bar"><span class="mono" style="font-size:11px;color:var(--b);width:60px">LLM</span><div class="prob-track"><div class="prob-fill" style="width:${lp*100}%;background:var(--b)"></div></div><span class="mono" style="font-size:12px;font-weight:700;width:45px;text-align:right;color:var(--b)">${P(lp,0)}</span></div>`}
+    const comps=[{l:'FLB',v:comp.flb_correction,base:mp},{l:'Time',v:comp.time_decay},{l:'Liquidity',v:comp.liquidity_signal},{l:'Volume',v:comp.volume_momentum}];
+    let compHtml=comps.filter(c=>c.v!==undefined&&c.v!==null).map(c=>{const val=typeof c.v==='number'?(c.base?c.v-c.base:c.v):0;const w=clamp(Math.abs(val)*500,2,100);const clr=val>0?'var(--g)':val<0?'var(--r)':'var(--t3)';return `<div class="comp-row"><span class="comp-label">${c.l}</span><div class="comp-bar-track"><div class="comp-bar-fill" style="width:${w}%;background:${clr};left:${val<0?100-w:50}%"></div></div><span class="comp-val mono">${val>=0?'+':''}${(val*100).toFixed(1)}%</span></div>`}).join('');
+    let llmHtml='';if(llm){llmHtml=`<div class="detail-section"><h3>AI Analysis</h3><div style="font-size:12px;color:var(--tw);line-height:1.5;margin-bottom:10px">${X(llm.llm_reasoning||'')}</div><div style="display:flex;gap:16px;font-size:11px"><span>Probability: <span class="mono" style="color:var(--b);font-weight:700">${P(llm.llm_probability||0,0)}</span></span><span>Confidence: <span class="mono" style="font-weight:700">${P(llm.llm_confidence||0,0)}</span></span></div>${llm.web_context?'<div style="margin-top:10px"><h3 style="margin-bottom:6px">Web Context</h3><div class="web-ctx">'+X(llm.web_context)+'</div></div>':''}</div>`}
+    detail=`<div class="detail open"><div class="detail-inner"><div class="detail-grid"><div class="detail-section"><h3>Probability Comparison</h3>${probBar}${llmBar}</div><div class="detail-section"><h3>Signal Components</h3>${compHtml||'<div style="color:var(--t3);font-size:12px">No data</div>'}</div>${llmHtml?'<div class="detail-full">'+llmHtml+'</div>':''}<div class="detail-section detail-full"><h3>Full Reasoning</h3><div style="font-size:12px;color:var(--t2);line-height:1.6">${X(m.reasoning||'No reasoning')}</div></div></div></div></div>`;
+  }
 
-  // Unanalyzed: clean row with price, liquidity, ban
-  return `<div class="mkt">
+  // Same layout for ALL markets — question on top, metrics below
+  return `<div class="mkt" ${hasAI?'onclick="toggle('+idx+')" style="cursor:pointer"':''}>
     <div class="mkt-row">
-      <div class="mkt-edge-bar" style="background:var(--border)"></div>
       <div class="mkt-body">
-        <div class="mkt-q">${analyzedDot}${X(m.question||'')}</div>
-        <div class="mkt-sub">${m.category||''}</div>
+        <div class="mkt-q">${hasAI?'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--g);margin-right:6px;vertical-align:middle" title="AI analyzed"></span>':''}${X(m.question||'')}</div>
+        <div class="mkt-sub">${hasAI?X((m.reasoning||'').substring(0,120)):(m.category||'')}</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+          <div style="width:80px;display:flex;height:3px;border-radius:2px;overflow:hidden;flex-shrink:0">
+            <div style="width:${Math.round(price*100)}%;background:var(--g)"></div>
+            <div style="width:${100-Math.round(price*100)}%;background:var(--r)"></div>
+          </div>
+          <span class="mono" style="font-size:11px;color:var(--tw)">YES ${Math.round(price*100)}%</span>
+          <span class="mono" style="font-size:11px;color:var(--t3)">NO ${100-Math.round(price*100)}%</span>
+        </div>
+        <button onclick="event.stopPropagation();banMarket('${X(m.market_id||m.id||'')}','${X(m.question||'')}')" style="margin-top:6px;background:var(--rd);color:var(--r);border:1px solid var(--r);border-radius:6px;padding:4px 10px;font-size:9px;font-weight:700;cursor:pointer;transition:all .15s">BAN</button>
       </div>
-      <div class="mkt-metrics">
-        <div class="mkt-m"><div class="mkt-m-label">Price</div><div class="mkt-m-val mono">${P(price,0)}</div></div>
-        <div class="mkt-m"><div class="mkt-m-label">Liquidity</div><div class="mkt-m-val mono" style="font-size:12px">${$(liq)}</div></div>
+      <div class="mkt-stats" style="align-self:flex-start">
+        <div class="mkt-m"><div class="mkt-m-label">AI Fair Value</div><div class="mkt-m-val mono" style="color:${hasAI?'var(--g)':'var(--t3)'}">${hasAI?P(m.estimated_prob||0,0):'\u2014'}</div></div>
+        <div class="mkt-m"><div class="mkt-m-label">Mispricing</div><div class="mkt-m-val mono" style="color:${hasAI?edgeClr(e):'var(--t3)'}">${hasAI?(e>=0?'+':'')+P(e):'\u2014'}</div></div>
+        <div class="mkt-m"><div class="mkt-m-label">AI Certainty</div><div class="mkt-m-val mono">${hasAI?P(m.confidence||0,0):'\u2014'}</div></div>
+        <div class="mkt-m"><div class="mkt-m-label">Volume</div><div class="mkt-m-val mono">${(m.volume||0)>1e6?((m.volume||0)/1e6).toFixed(1)+'M':(m.volume||0)>1e3?((m.volume||0)/1e3).toFixed(0)+'K':'\u2014'}</div></div>
+        <div class="mkt-m"><div class="mkt-m-label">Liquidity</div><div class="mkt-m-val mono">${liq>1e6?(liq/1e6).toFixed(1)+'M':liq>1e3?(liq/1e3).toFixed(0)+'K':$(liq)}</div></div>
       </div>
-      <button onclick="event.stopPropagation();banMarket('${X(m.market_id||m.id||'')}','${X(m.question||'')}')" style="background:none;color:var(--t3);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:9px;font-weight:600;cursor:pointer;flex-shrink:0;margin-left:8px;transition:all .2s" onmouseover="this.style.color='var(--r)';this.style.borderColor='var(--r)'" onmouseout="this.style.color='var(--t3)';this.style.borderColor='var(--border)'">BAN</button>
-    </div>
+    </div>${detail}
   </div>`;
 }
 
@@ -423,7 +360,7 @@ function render(){
       paginationEl.innerHTML=pg;
     }else{paginationEl.innerHTML=`<span style="font-size:11px;color:var(--t3)">${filtered.length} markets</span>`}
   }else if(tab==='opportunities'){
-    el.innerHTML=opps.length?opps.map((m,i)=>renderMarket(m,100+i)).join(''):'<div class="empty">No trading signals found</div>';
+    el.innerHTML=opps.length?opps.map((m,i)=>renderMarketRow({...m,_analyzed:true},1000+i)).join(''):'<div class="empty">No trading signals found</div>';
   }else if(tab==='positions'){
     el.innerHTML=renderPositions(pos);
   }else{
