@@ -34,6 +34,8 @@ class Scalper:
         self._markets_cache = []
         self._price_history: dict[str, list[tuple[float, float]]] = {}  # market_id -> [(timestamp, price)]
         self._HISTORY_WINDOW = 300  # Keep 5 minutes of history
+        self._pending_orders: dict[str, dict] = {}  # token_id -> order info
+        self._traded_markets: set[str] = set()  # market questions we've traded (never trade same market twice)
 
     def tick(self) -> list[dict]:
         """Run one scalp cycle. Called every SCALP_SCAN_INTERVAL seconds."""
@@ -75,7 +77,12 @@ class Scalper:
                 break
 
             question = mkt.get("question", "")
-            if question.lower().strip() in existing_questions:
+            q_key = question.lower().strip()
+
+            # Skip if we have ANY position or pending order on this market
+            if q_key in existing_questions:
+                continue
+            if q_key in self._traded_markets:
                 continue
 
             signal = self._check_signal(mkt)
@@ -403,6 +410,14 @@ class Scalper:
         )
 
         if order:
+            self._traded_markets.add(mkt["question"].lower().strip())
+            self._pending_orders[signal["token_id"]] = {
+                "question": mkt["question"],
+                "direction": signal["direction"],
+                "price": price,
+                "shares": num_shares,
+                "placed_at": time.time(),
+            }
             return {
                 "action": "entry",
                 "type": signal["type"],
