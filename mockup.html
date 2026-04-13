@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#080c14;color:#c9d1d9;font-family:'Inter',system-ui,sans-serif;padding:40px;min-height:100vh;
+  background-image:radial-gradient(ellipse at 20% 0%,rgba(88,166,255,0.03) 0%,transparent 50%),radial-gradient(ellipse at 80% 100%,rgba(0,212,170,0.02) 0%,transparent 50%)}
+.mono{font-family:'JetBrains Mono',monospace}
+.container{max-width:1200px;margin:0 auto}
+h2{color:#e8edf4;font-size:16px;margin-bottom:24px;font-weight:600}
+
+/* ─── Stat cards ─── */
+.stats{display:flex;gap:12px;margin-bottom:32px;flex-wrap:wrap}
+.stat{background:rgba(15,21,32,0.7);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:18px 22px;flex:1;min-width:140px;transition:all .2s;box-shadow:0 2px 8px rgba(0,0,0,0.2)}
+.stat:hover{border-color:rgba(255,255,255,0.1);transform:translateY(-1px)}
+.stat-l{font-size:10px;color:#4a5568;text-transform:uppercase;letter-spacing:.07em;font-weight:600;margin-bottom:8px}
+.stat-v{font-size:26px;font-weight:800;letter-spacing:-.02em}
+.stat-v.hero{background:linear-gradient(135deg,#00d4aa 30%,#58a6ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.stat-s{font-size:10px;color:#4a5568;margin-top:4px}
+.green{color:#00d4aa}.red{color:#ff5c5c}.dim{color:#4a5568}.white{color:#e8edf4}
+
+/* ─── Market card ─── */
+.card{background:rgba(15,21,32,0.5);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.05);border-radius:16px;margin-bottom:12px;overflow:hidden;transition:all .2s}
+.card:hover{border-color:rgba(255,255,255,0.1);box-shadow:0 8px 24px rgba(0,0,0,0.3)}
+.card-inner{padding:20px 24px}
+
+/* Row 1: title + ban */
+.card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+.card-title{font-size:15px;font-weight:700;color:#e8edf4;line-height:1.4}
+.card-title .ai-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#00d4aa;margin-right:6px;vertical-align:middle;box-shadow:0 0 6px rgba(0,212,170,0.4)}
+.card-desc{font-size:11px;color:#6b7b8d;margin-top:4px;line-height:1.4}
+.btn-ban{background:transparent;border:1px solid rgba(255,255,255,0.08);color:#6b7b8d;font-size:10px;font-weight:600;padding:6px 14px;border-radius:8px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.btn-ban:hover{border-color:#ff5c5c;color:#ff5c5c;background:rgba(255,92,92,0.08)}
+
+/* Row 2: odds bar */
+.odds-row{display:flex;align-items:center;gap:12px;margin-top:14px}
+.odds-bar{flex:1;height:6px;border-radius:3px;overflow:hidden;display:flex}
+.odds-yes{background:#00d4aa;transition:width .3s}
+.odds-no{background:#ff5c5c;opacity:.4}
+.odds-pct{font-size:12px;font-weight:700;flex-shrink:0}
+.odds-pct.yes{color:#00d4aa}.odds-pct.no{color:#ff5c5c;opacity:.6}
+
+/* Row 3: stats grid */
+.card-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}
+.card-stats.cols-5{grid-template-columns:repeat(5,1fr)}
+.cs{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);border-radius:10px;padding:10px 14px;transition:border-color .2s}
+.cs:hover{border-color:rgba(255,255,255,0.08)}
+.cs-l{font-size:9px;color:#4a5568;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.cs-v{font-size:16px;font-weight:700;margin-top:4px}
+
+/* ─── Position card ─── */
+.pos-card{background:rgba(15,21,32,0.5);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.05);border-radius:16px;padding:20px 24px;margin-bottom:12px;display:flex;gap:20px;transition:all .2s}
+.pos-card:hover{border-color:rgba(255,255,255,0.1)}
+.pos-left{flex:1;min-width:0}
+.pos-right{text-align:right;flex-shrink:0}
+.badge{display:inline-block;font-size:9px;font-weight:700;padding:4px 10px;border-radius:6px;text-transform:uppercase;letter-spacing:.04em}
+.badge.yes{background:rgba(0,212,170,0.12);color:#00d4aa;border:1px solid rgba(0,212,170,0.15)}
+.badge.no{background:rgba(255,92,92,0.1);color:#ff5c5c;border:1px solid rgba(255,92,92,0.12)}
+.pos-title{font-size:14px;font-weight:600;color:#e8edf4;margin-top:8px;line-height:1.35}
+.pos-meta{font-size:11px;color:#6b7b8d;margin-top:6px}
+.pos-val{font-size:22px;font-weight:800;color:#e8edf4}
+.pos-pnl{font-size:14px;font-weight:700;margin-top:4px}
+.btn-sell{margin-top:10px;background:rgba(255,92,92,0.1);border:1px solid rgba(255,92,92,0.2);color:#ff5c5c;font-size:11px;font-weight:700;padding:7px 18px;border-radius:8px;cursor:pointer;transition:all .15s}
+.btn-sell:hover{background:#ff5c5c;color:#fff}
+
+/* ─── Tabs ─── */
+.tabs{display:flex;gap:4px;margin-bottom:24px;background:rgba(15,21,32,0.5);border-radius:12px;padding:4px;border:1px solid rgba(255,255,255,0.04)}
+.tab{background:transparent;border:none;color:#6b7b8d;padding:10px 20px;font-size:12px;font-weight:600;cursor:pointer;border-radius:8px;transition:all .15s}
+.tab:hover{color:#c9d1d9}
+.tab.on{background:rgba(255,255,255,0.06);color:#e8edf4}
+
+/* ─── Search ─── */
+.search{width:100%;padding:12px 16px;background:rgba(15,21,32,0.5);border:1px solid rgba(255,255,255,0.06);border-radius:12px;color:#e8edf4;font-size:13px;outline:none;font-family:inherit;margin-bottom:16px;transition:border-color .2s}
+.search:focus{border-color:rgba(88,166,255,0.3)}
+.search::placeholder{color:#4a5568}
+</style>
+</head>
+<body>
+<div class="container">
+
+<h2>Stat Cards — Variant E (chosen)</h2>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:32px">
+  <div style="background:rgba(15,21,32,0.7);border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:20px 22px;grid-row:1/3">
+    <div style="font-size:10px;color:#4a5568;text-transform:uppercase;letter-spacing:.07em;font-weight:600">Total Value</div>
+    <div class="mono" style="font-size:32px;font-weight:800;margin-top:8px;background:linear-gradient(135deg,#00d4aa 30%,#58a6ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent">$199.15</div>
+    <div style="display:flex;gap:16px;margin-top:12px;font-size:11px">
+      <span style="color:#6b7b8d">Return <span class="mono" style="color:#00d4aa;font-weight:700">+0.0%</span></span>
+      <span style="color:#6b7b8d">P&L <span class="mono" style="color:#00d4aa;font-weight:700">+$0.00</span></span>
+    </div>
+    <div style="margin-top:12px;height:3px;background:rgba(255,255,255,0.04);border-radius:2px;overflow:hidden">
+      <div style="width:50%;height:100%;background:linear-gradient(90deg,#00d4aa,#58a6ff);border-radius:2px"></div>
+    </div>
+  </div>
+  <div style="background:rgba(15,21,32,0.7);border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:14px 18px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:10px;color:#4a5568;text-transform:uppercase;letter-spacing:.07em;font-weight:600">ROI / Trade</div>
+      <div class="mono" style="font-size:18px;font-weight:700;color:#e8edf4">&mdash;</div>
+    </div>
+    <div style="margin-top:8px;height:3px;background:rgba(255,255,255,0.04);border-radius:2px;overflow:hidden">
+      <div style="width:0%;height:100%;background:#00d4aa;border-radius:2px"></div>
+    </div>
+  </div>
+  <div style="background:rgba(15,21,32,0.7);border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:14px 18px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:10px;color:#4a5568;text-transform:uppercase;letter-spacing:.07em;font-weight:600">Win Rate</div>
+      <div class="mono" style="font-size:18px;font-weight:700;color:#e8edf4">&mdash;</div>
+    </div>
+    <div style="font-size:10px;color:#4a5568;margin-top:8px">0W / 0L</div>
+  </div>
+  <div style="background:rgba(15,21,32,0.7);border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:14px 18px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:10px;color:#4a5568;text-transform:uppercase;letter-spacing:.07em;font-weight:600">Open</div>
+      <div class="mono" style="font-size:18px;font-weight:700;color:#e8edf4">7</div>
+    </div>
+    <div style="font-size:10px;color:#4a5568;margin-top:8px">$46.82 deployed</div>
+  </div>
+  <div style="background:rgba(15,21,32,0.7);border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:14px 18px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:10px;color:#4a5568;text-transform:uppercase;letter-spacing:.07em;font-weight:600">Markets</div>
+      <div class="mono" style="font-size:18px;font-weight:700;color:#e8edf4">211</div>
+    </div>
+    <div style="font-size:10px;color:#4a5568;margin-top:8px">10 analyzed</div>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <button class="tab on">Markets (211)</button>
+  <button class="tab">Signals (4)</button>
+  <button class="tab">Positions (7)</button>
+  <button class="tab">History (0)</button>
+</div>
+
+<!-- Search -->
+<input class="search" placeholder="Search markets...">
+
+<!-- REMOVED A-C variants -->
+<h2 style="margin-top:40px;margin-bottom:16px">Market Card — D+E Combo: Table with accent borders</h2>
+
+<div style="background:rgba(15,21,32,0.5);border:1px solid rgba(255,255,255,0.05);border-radius:12px;overflow:hidden">
+  <!-- Header row -->
+  <div style="display:grid;grid-template-columns:1fr 60px 60px 70px 70px 60px 60px 50px;align-items:center;padding:8px 20px;gap:12px;font-size:9px;color:#4a5568;text-transform:uppercase;letter-spacing:.06em;font-weight:600;border-bottom:1px solid rgba(255,255,255,0.04);background:rgba(255,255,255,0.01)">
+    <div>Market</div><div style="text-align:center">Price</div><div style="text-align:center">AI Val</div><div style="text-align:center">Misprice</div><div style="text-align:center">Cert</div><div style="text-align:center">Vol</div><div style="text-align:center">Liq</div><div></div>
+  </div>
+  <!-- Analyzed row -->
+  <div style="display:grid;grid-template-columns:1fr 60px 60px 70px 70px 60px 60px 50px;align-items:center;padding:14px 20px;gap:12px;border-bottom:1px solid rgba(255,255,255,0.03);border-left:3px solid #00d4aa;transition:background .15s;cursor:pointer" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+    <div style="font-size:13px;font-weight:600;color:#e8edf4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Will Jesus Christ return before GTA VI?</div>
+    <div class="mono" style="font-size:13px;font-weight:700;color:#e8edf4;text-align:center">49%</div>
+    <div class="mono" style="font-size:13px;font-weight:700;color:#00d4aa;text-align:center">35%</div>
+    <div class="mono" style="font-size:13px;font-weight:700;color:#ff5c5c;text-align:center">-13.8%</div>
+    <div class="mono" style="font-size:12px;color:#6b7b8d;text-align:center">69%</div>
+    <div class="mono" style="font-size:12px;color:#6b7b8d;text-align:center">11M</div>
+    <div class="mono" style="font-size:12px;color:#6b7b8d;text-align:center">893K</div>
+    <div style="text-align:center"><button class="btn-ban" style="padding:3px 8px;font-size:9px">Ban</button></div>
+  </div>
+  <!-- Another analyzed -->
+  <div style="display:grid;grid-template-columns:1fr 60px 60px 70px 70px 60px 60px 50px;align-items:center;padding:14px 20px;gap:12px;border-bottom:1px solid rgba(255,255,255,0.03);border-left:3px solid #ff5c5c;transition:background .15s;cursor:pointer" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+    <div style="font-size:13px;font-weight:600;color:#e8edf4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Will China invade Taiwan before GTA VI?</div>
+    <div class="mono" style="font-size:13px;font-weight:700;color:#e8edf4;text-align:center">52%</div>
+    <div class="mono" style="font-size:13px;font-weight:700;color:#00d4aa;text-align:center">40%</div>
+    <div class="mono" style="font-size:13px;font-weight:700;color:#ff5c5c;text-align:center">-11.4%</div>
+    <div class="mono" style="font-size:12px;color:#6b7b8d;text-align:center">68%</div>
+    <div class="mono" style="font-size:12px;color:#6b7b8d;text-align:center">19.6M</div>
+    <div class="mono" style="font-size:12px;color:#6b7b8d;text-align:center">844K</div>
+    <div style="text-align:center"><button class="btn-ban" style="padding:3px 8px;font-size:9px">Ban</button></div>
+  </div>
+  <!-- Unanalyzed row -->
+  <div style="display:grid;grid-template-columns:1fr 60px 60px 70px 70px 60px 60px 50px;align-items:center;padding:14px 20px;gap:12px;border-bottom:1px solid rgba(255,255,255,0.03);border-left:3px solid transparent;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+    <div style="font-size:13px;font-weight:600;color:#e8edf4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Will John Fetterman win the 2028 Democratic nomination?</div>
+    <div class="mono" style="font-size:13px;font-weight:700;color:#e8edf4;text-align:center">1%</div>
+    <div class="mono" style="font-size:13px;color:#4a5568;text-align:center">&mdash;</div>
+    <div class="mono" style="font-size:13px;color:#4a5568;text-align:center">&mdash;</div>
+    <div class="mono" style="font-size:12px;color:#4a5568;text-align:center">&mdash;</div>
+    <div class="mono" style="font-size:12px;color:#6b7b8d;text-align:center">17.5M</div>
+    <div class="mono" style="font-size:12px;color:#6b7b8d;text-align:center">2.1M</div>
+    <div style="text-align:center"><button class="btn-ban" style="padding:3px 8px;font-size:9px">Ban</button></div>
+  </div>
+  <!-- Another unanalyzed -->
+  <div style="display:grid;grid-template-columns:1fr 60px 60px 70px 70px 60px 60px 50px;align-items:center;padding:14px 20px;gap:12px;border-left:3px solid transparent;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+    <div style="font-size:13px;font-weight:600;color:#e8edf4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Will USA win the 2026 FIFA World Cup?</div>
+    <div class="mono" style="font-size:13px;font-weight:700;color:#e8edf4;text-align:center">1%</div>
+    <div class="mono" style="font-size:13px;color:#4a5568;text-align:center">&mdash;</div>
+    <div class="mono" style="font-size:13px;color:#4a5568;text-align:center">&mdash;</div>
+    <div class="mono" style="font-size:12px;color:#4a5568;text-align:center">&mdash;</div>
+    <div class="mono" style="font-size:12px;color:#6b7b8d;text-align:center">9.4M</div>
+    <div class="mono" style="font-size:12px;color:#6b7b8d;text-align:center">2.0M</div>
+    <div style="text-align:center"><button class="btn-ban" style="padding:3px 8px;font-size:9px">Ban</button></div>
+  </div>
+</div>
+
+
+<h2 style="margin-top:40px;margin-bottom:16px">Position — Table style</h2>
+
+<div style="background:rgba(15,21,32,0.5);border:1px solid rgba(255,255,255,0.05);border-radius:12px;overflow:hidden">
+  <!-- Header -->
+  <div style="display:grid;grid-template-columns:1fr 80px 80px 80px 90px;align-items:center;padding:8px 20px;gap:12px;font-size:9px;color:#4a5568;text-transform:uppercase;letter-spacing:.06em;font-weight:600;border-bottom:1px solid rgba(255,255,255,0.04);background:rgba(255,255,255,0.01)">
+    <div>Position</div><div style="text-align:center">Now</div><div style="text-align:right">Value</div><div style="text-align:right">P&L</div><div></div>
+  </div>
+  <!-- NO position -->
+  <div style="display:grid;grid-template-columns:1fr 80px 80px 80px 90px;align-items:center;padding:14px 20px;gap:12px;border-bottom:1px solid rgba(255,255,255,0.03);border-left:3px solid #ff5c5c;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+    <div>
+      <div style="font-size:13px;font-weight:600;color:#e8edf4">Will Jesus Christ return before GTA VI?</div>
+      <div style="font-size:11px;color:#6b7b8d;margin-top:3px"><span style="color:#ff5c5c;font-weight:700">NO</span> &middot; 27 shares @ $0.52 &middot; 1m ago</div>
+    </div>
+    <div class="mono" style="font-size:13px;color:#e8edf4;text-align:center">$0.51</div>
+    <div class="mono" style="font-size:13px;font-weight:700;color:#e8edf4;text-align:right">$13.91</div>
+    <div class="mono" style="font-size:13px;font-weight:700;color:#00d4aa;text-align:right">+$0.00</div>
+    <div style="text-align:center"><button class="btn-sell" style="padding:4px 12px;font-size:9px">Close</button></div>
+  </div>
+  <!-- YES position -->
+  <div style="display:grid;grid-template-columns:1fr 80px 80px 80px 90px;align-items:center;padding:14px 20px;gap:12px;border-left:3px solid #00d4aa;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+    <div>
+      <div style="font-size:13px;font-weight:600;color:#e8edf4">Will the next Prime Minister of Hungary be Péter Magyar?</div>
+      <div style="font-size:11px;color:#6b7b8d;margin-top:3px"><span style="color:#00d4aa;font-weight:700">YES</span> &middot; 1 shares @ $0.99</div>
+    </div>
+    <div class="mono" style="font-size:13px;color:#e8edf4;text-align:center">$0.99</div>
+    <div class="mono" style="font-size:13px;font-weight:700;color:#e8edf4;text-align:right">$1.00</div>
+    <div class="mono" style="font-size:13px;font-weight:700;color:#ff5c5c;text-align:right">-$0.01</div>
+    <div style="text-align:center"><button class="btn-sell" style="padding:4px 12px;font-size:9px">Close</button></div>
+  </div>
+</div>
+
+
+</div>
+</body>
+</html>
