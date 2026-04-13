@@ -1,9 +1,7 @@
 """
 Executor
 Handles order placement, monitoring, and cancellation via Polymarket CLOB API.
-
-Note: Polymarket uses an on-chain settlement system with off-chain orderbook (CLOB).
-Orders are signed with your Ethereum wallet and submitted to the CLOB.
+Uses py-clob-client for EIP-712 order signing.
 """
 import time
 import json
@@ -18,17 +16,56 @@ import config
 
 logger = logging.getLogger(__name__)
 
+# Lazy-loaded CLOB client
+_clob_client = None
+
+
+def _get_clob_client():
+    """Initialize the py-clob-client with proper credentials."""
+    global _clob_client
+    if _clob_client is not None:
+        return _clob_client
+
+    if not config.PRIVATE_KEY:
+        logger.error("PRIVATE_KEY not set — cannot sign orders")
+        return None
+
+    try:
+        from py_clob_client.client import ClobClient
+        from py_clob_client.clob_types import ApiCreds
+
+        creds = ApiCreds(
+            api_key=config.POLY_API_KEY,
+            api_secret=config.POLY_API_SECRET,
+            api_passphrase=config.POLY_API_PASSPHRASE,
+        )
+
+        _clob_client = ClobClient(
+            host=config.POLYMARKET_API_BASE,
+            chain_id=137,  # Polygon
+            key=config.PRIVATE_KEY,
+            creds=creds,
+            signature_type=2,  # Proxy wallet
+        )
+
+        logger.info("CLOB client initialized with order signing")
+        return _clob_client
+
+    except Exception as e:
+        logger.error(f"Failed to initialize CLOB client: {e}")
+        return None
+
 
 class Order:
     """Represents a placed order."""
 
     def __init__(self, raw: dict):
-        self.id = raw.get("id", "")
+        self.id = raw.get("orderID", raw.get("id", ""))
         self.status = raw.get("status", "unknown")
         self.token_id = raw.get("asset_id", "")
-        self.side = raw.get("side", "")  # BUY or SELL
+        self.side = raw.get("side", "")
         self.price = float(raw.get("price", 0))
-        self.size = float(raw.get("original_size", 0))
+        self.size = float(raw.get("original_size", raw.get("size", 0)))
         self.filled = float(raw.get("size_matched", 0))
         self.remaining = self.size - self.filled
         self.created_at = raw.get("created_at", "")
@@ -40,7 +77,7 @@ class Order:
 
     @property
     def is_open(self) -> bool:
-        return self.status in ("LIVE", "OPEN")
+        return self.status in ("LIVE", "OPEN", "live")
 
     def to_dict(self) -> dict:
         return {
@@ -55,15 +92,7 @@ class Order:
 
 
 class Executor:
-    """
-    Executes trades on Polymarket's CLOB.
-
-    Supports:
-    - Limit order placement
-    - Order status monitoring
-    - Order cancellation
-    - Fill tracking
-    """
+    """Executes trades on Polymarket's CLOB using py-clob-client for signing."""
 
     def __init__(self):
         self.base_url = config.POLYMARKET_API_BASE
@@ -77,6 +106,7 @@ class Executor:
                 "https": config.PROXY_URL,
             }
             logger.info(f"Using proxy for CLOB API: {config.PROXY_URL.split('@')[-1] if '@' in config.PROXY_URL else config.PROXY_URL}")
+        self.session.headers.update({"User-Agent": "Mozilla/5.0"})
         self.pending_orders: list[Order] = []
         self.filled_orders: list[Order] = []
 
@@ -87,7 +117,6 @@ class Executor:
         if body:
             message += body.replace("'", '"')
 
-        # Secret is base64url-encoded — decode it before HMAC
         secret_bytes = base64.urlsafe_b64decode(self.api_secret)
         h = hmac.new(secret_bytes, message.encode("utf-8"), hashlib.sha256)
         signature = base64.urlsafe_b64encode(h.digest()).decode("utf-8")
@@ -101,53 +130,61 @@ class Executor:
             "Content-Type": "application/json",
         }
 
-    def place_limit_order(
+    def place_order(
         self,
         token_id: str,
-        side: str,  # "BUY" or "SELL"
+        side: str,
         price: float,
         size: int,
-        expiration: Optional[int] = None,
     ) -> Optional[Order]:
         """
-        Place a limit order on Polymarket CLOB.
-
-        Args:
-            token_id: The token to trade (YES or NO token ID)
-            side: "BUY" or "SELL"
-            price: Limit price (0-1 for prediction markets)
-            size: Number of shares
-            expiration: Unix timestamp for order expiration (optional)
+        Place a signed order via py-clob-client.
+        This handles EIP-712 signing automatically.
         """
-        if not self.api_key:
-            logger.error("No API key configured - cannot place orders")
+        client = _get_clob_client()
+        if not client:
+            logger.error("CLOB client not available — cannot place order")
             return None
 
-        path = "/order"
-        order_payload = {
-            "tokenID": token_id,
-            "price": round(price, 2),
-            "size": size,
-            "side": side,
-            "feeRateBps": 0,  # Polymarket handles fees
-            "nonce": str(int(time.time() * 1000)),
-            "expiration": expiration or 0,
-        }
-
-        body = json.dumps(order_payload)
-        headers = self._get_headers("POST", path, body)
-
         try:
-            resp = self.session.post(
-                f"{self.base_url}{path}",
-                headers=headers,
-                data=body,
-                timeout=15,
+            from py_clob_client.order_builder.constants import BUY, SELL
+
+            order_side = BUY if side.upper() == "BUY" else SELL
+
+            # Get market info for tick size and neg_risk
+            # Default to standard values
+            tick_size = "0.01"
+            neg_risk = False
+
+            # Try to get market-specific info
+            try:
+                resp = self.session.get(
+                    f"{self.base_url}/book",
+                    params={"token_id": token_id},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    book = resp.json()
+                    tick_size = book.get("tick_size", "0.01")
+                    neg_risk = book.get("neg_risk", False)
+            except Exception:
+                pass
+
+            resp = client.create_and_post_order(
+                {
+                    "tokenID": token_id,
+                    "price": round(price, 2),
+                    "size": size,
+                    "side": order_side,
+                },
+                {
+                    "tickSize": tick_size,
+                    "negRisk": neg_risk,
+                },
             )
 
-            if resp.status_code == 200:
-                data = resp.json()
-                order = Order(data)
+            if resp and resp.get("success"):
+                order = Order(resp)
                 self.pending_orders.append(order)
                 logger.info(
                     f"Order placed: {side} {size} shares @ ${price:.2f} "
@@ -155,12 +192,24 @@ class Executor:
                 )
                 return order
             else:
-                logger.error(f"Order failed: {resp.status_code} - {resp.text}")
+                error = resp.get("errorMsg", resp) if resp else "No response"
+                logger.error(f"Order rejected: {error}")
                 return None
 
-        except requests.RequestException as e:
-            logger.error(f"Order placement error: {e}")
+        except Exception as e:
+            logger.error(f"Order placement error: {e}", exc_info=True)
             return None
+
+    def place_limit_order(
+        self,
+        token_id: str,
+        side: str,
+        price: float,
+        size: int,
+        expiration: Optional[int] = None,
+    ) -> Optional[Order]:
+        """Backward-compatible wrapper for place_order."""
+        return self.place_order(token_id, side, price, size)
 
     def check_order(self, order_id: str) -> Optional[Order]:
         """Check the status of an order."""
@@ -182,9 +231,22 @@ class Executor:
 
     def cancel_order(self, order_id: str) -> bool:
         """Cancel an open order."""
+        client = _get_clob_client()
+        if client:
+            try:
+                client.cancel(order_id)
+                logger.info(f"Order cancelled: {order_id}")
+                self.pending_orders = [
+                    o for o in self.pending_orders if o.id != order_id
+                ]
+                return True
+            except Exception as e:
+                logger.error(f"Cancel error: {e}")
+                return False
+
+        # Fallback to raw API
         path = f"/order/{order_id}"
         headers = self._get_headers("DELETE", path)
-
         try:
             resp = self.session.delete(
                 f"{self.base_url}{path}",
@@ -205,10 +267,7 @@ class Executor:
             return False
 
     def monitor_pending_orders(self, timeout_seconds: Optional[int] = None):
-        """
-        Check all pending orders and update their status.
-        Cancel orders that have exceeded timeout.
-        """
+        """Check all pending orders and update their status."""
         timeout = timeout_seconds or config.ORDER_TIMEOUT_SECONDS
         now = time.time()
 
@@ -223,7 +282,6 @@ class Executor:
                 self.filled_orders.append(updated)
 
             elif updated.is_open:
-                # Check if timed out
                 try:
                     created = datetime.fromisoformat(
                         updated.created_at.replace("Z", "+00:00")
@@ -241,26 +299,66 @@ class Executor:
         num_shares: int,
         target_price: float,
     ) -> Optional[Order]:
-        """
-        High-level trade execution.
-        Places a limit order slightly better than the target price.
-        """
-        side = "BUY"
-
-        # Place limit order slightly inside the spread
+        """High-level trade execution with slight price improvement."""
         if direction == "yes":
             limit_price = min(target_price + config.LIMIT_OFFSET, 0.99)
         else:
             limit_price = min(target_price + config.LIMIT_OFFSET, 0.99)
 
-        order = self.place_limit_order(
+        return self.place_order(
             token_id=token_id,
-            side=side,
+            side="BUY",
             price=round(limit_price, 2),
             size=num_shares,
         )
 
-        return order
+    def get_balance(self) -> Optional[float]:
+        """Fetch USDC cash + position value from Polymarket."""
+        if not self.api_key:
+            logger.error("No API key configured — cannot fetch balance")
+            return None
+
+        # Cash from CLOB (signature_type=2 for proxy wallets)
+        cash = 0.0
+        path = "/balance-allowance"
+        headers = self._get_headers("GET", path)
+        try:
+            resp = self.session.get(
+                f"{self.base_url}{path}",
+                headers=headers,
+                params={"asset_type": "COLLATERAL", "signature_type": "2"},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                raw = float(data.get("balance", "0"))
+                cash = raw / 1_000_000 if raw > 1_000_000 else raw
+                logger.info(f"CLOB cash balance: ${cash:.2f}")
+        except Exception as e:
+            logger.error(f"CLOB balance fetch error: {e}")
+            return None
+
+        # Position value from Data API (public)
+        positions_value = 0.0
+        proxy_wallet = config.PROXY_WALLET_ADDRESS
+        if proxy_wallet:
+            try:
+                resp = self.session.get(
+                    "https://data-api.polymarket.com/value",
+                    params={"user": proxy_wallet},
+                    headers={"User-Agent": "Mozilla/5.0"},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data and isinstance(data, list) and len(data) > 0:
+                        positions_value = float(data[0].get("value", 0))
+            except Exception as e:
+                logger.warning(f"Data API position value fetch failed: {e}")
+
+        total = cash + positions_value
+        logger.info(f"Polymarket balance: ${cash:.2f} cash + ${positions_value:.2f} positions = ${total:.2f} total")
+        return total
 
     def get_positions(self) -> list[dict]:
         """Fetch all open positions from Polymarket Data API."""
@@ -305,62 +403,7 @@ class Executor:
         return []
 
     def get_open_orders_summary(self) -> list[dict]:
-        """Get summary of all pending orders."""
         return [o.to_dict() for o in self.pending_orders]
 
     def get_fills_summary(self) -> list[dict]:
-        """Get summary of all filled orders."""
         return [o.to_dict() for o in self.filled_orders]
-
-    def get_balance(self) -> Optional[float]:
-        """
-        Fetch USDC cash balance from Polymarket CLOB API.
-        Uses signature_type=2 for proxy wallet accounts.
-        Also fetches position value from Data API to get total portfolio.
-        """
-        if not self.api_key:
-            logger.error("No API key configured — cannot fetch balance")
-            return None
-
-        # Get cash balance from CLOB (signature_type=2 for proxy wallets)
-        cash = 0.0
-        path = "/balance-allowance"
-        headers = self._get_headers("GET", path)
-        try:
-            resp = self.session.get(
-                f"{self.base_url}{path}",
-                headers=headers,
-                params={"asset_type": "COLLATERAL", "signature_type": "2"},
-                timeout=10,
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                raw = float(data.get("balance", "0"))
-                cash = raw / 1_000_000 if raw > 1_000_000 else raw
-                logger.info(f"CLOB cash balance: ${cash:.2f}")
-        except Exception as e:
-            logger.error(f"CLOB balance fetch error: {e}")
-            return None
-
-        # Get position value from Data API (public, no auth)
-        positions_value = 0.0
-        proxy_wallet = config.PROXY_WALLET_ADDRESS
-        if proxy_wallet:
-            try:
-                resp = self.session.get(
-                    "https://data-api.polymarket.com/value",
-                    params={"user": proxy_wallet},
-                    headers={"User-Agent": "Mozilla/5.0"},
-                    timeout=10,
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if data and isinstance(data, list) and len(data) > 0:
-                        positions_value = float(data[0].get("value", 0))
-            except Exception as e:
-                logger.warning(f"Data API position value fetch failed: {e}")
-
-        total = cash + positions_value
-        logger.info(f"Polymarket balance: ${cash:.2f} cash + ${positions_value:.2f} positions = ${total:.2f} total")
-        return total
-

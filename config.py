@@ -21,11 +21,10 @@ POLY_API_PASSPHRASE = os.getenv("POLY_API_PASSPHRASE", "")
 # Format: socks5://username:password@host:port
 PROXY_URL = os.getenv("PROXY_URL", "")
 
-# Polymarket wallet addresses
-# WALLET_ADDRESS = baseAddress from CLOB creds (used for API auth)
-# PROXY_WALLET_ADDRESS = the proxy wallet shown in Polymarket UI (used for balance/positions)
-WALLET_ADDRESS = os.getenv("WALLET_ADDRESS", "")
-PROXY_WALLET_ADDRESS = os.getenv("PROXY_WALLET_ADDRESS", "")
+# Polymarket wallet
+PRIVATE_KEY = os.getenv("PRIVATE_KEY", "")  # MetaMask private key for signing orders
+WALLET_ADDRESS = os.getenv("WALLET_ADDRESS", "")  # baseAddress from CLOB creds
+PROXY_WALLET_ADDRESS = os.getenv("PROXY_WALLET_ADDRESS", "")  # Polymarket proxy wallet
 
 # ─── Bankroll & Risk Management ──────────────────────────────────────
 BANKROLL = None  # Must be fetched from Polymarket at startup
