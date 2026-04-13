@@ -114,7 +114,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 # ─── Scalping Strategy ───────────────────────────────────────────────
 SCALP_ENABLED = os.getenv("SCALP_ENABLED", "true").lower() == "true"
-SCALP_TAKE_PROFIT = float(os.getenv("SCALP_TAKE_PROFIT", "0.03"))   # Exit at +3 cents
+SCALP_TAKE_PROFIT = float(os.getenv("SCALP_TAKE_PROFIT", "0.05"))   # Exit at +5%
 SCALP_STOP_LOSS = float(os.getenv("SCALP_STOP_LOSS", "0.03"))       # Exit at -3 cents
 SCALP_MAX_HOLD_MINUTES = int(os.getenv("SCALP_MAX_HOLD_MINUTES", "180"))  # Force exit after 3h
 SCALP_MIN_LIQUIDITY = float(os.getenv("SCALP_MIN_LIQUIDITY", "1000"))

@@ -205,9 +205,8 @@ class AppHandler(BaseHTTPRequestHandler):
             if token_id and size > 0 and price > 0:
                 executor = _state.get("executor")
                 if executor:
-                    # Market sell — amount = shares, price = min acceptable (5% slippage)
-                    floor_price = round(max(price * 0.95, 0.01), 2)
-                    order = executor.place_market_order(token_id, "SELL", amount=size, price=floor_price)
+                    # Limit sell at current price — maker = 0% fee
+                    order = executor.place_order(token_id, "SELL", round(price, 2), int(size), order_type="GTC")
                     if order:
                         # Record the close in trades table
                         question = body.get("question", "")

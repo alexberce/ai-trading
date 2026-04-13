@@ -437,16 +437,17 @@ class Scalper:
             f"({signal['reason']})"
         )
 
-        # Market order: spend $X, fill at best available price
-        # Price is slippage protection — max 5% above current
-        max_price = round(min(price * 1.05, 0.99), 2)
-        order = self.executor.place_market_order(
+        # Limit buy at current price — maker order = 0% fee
+        num_shares = int(spend / price) if price > 0 else 0
+        if num_shares < 5:
+            return None
+        order = self.executor.place_order(
             token_id=signal["token_id"],
             side="BUY",
-            amount=spend,
-            price=max_price,
+            price=round(price, 2),
+            size=num_shares,
+            order_type="GTC",
         )
-        num_shares = int(spend / price) if price > 0 else 0
 
         # Track attempt regardless of success to prevent retry spam
         self._pending_orders[signal["token_id"]] = {
