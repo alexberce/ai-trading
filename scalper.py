@@ -47,9 +47,9 @@ class Scalper:
         exit_actions = self._check_exits()
         actions.extend(exit_actions)
 
-        # 2. Fetch active markets with price movement (cache for 30s)
+        # 2. Fetch markets and track prices every tick
         now = time.time()
-        if now - self._last_fetch >= 30:
+        if now - self._last_fetch >= config.SCALP_SCAN_INTERVAL:
             self._markets_cache = self._fetch_movers()
             self._last_fetch = now
 
