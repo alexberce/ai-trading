@@ -179,6 +179,25 @@ class AppHandler(BaseHTTPRequestHandler):
             else:
                 self._json_response({"ok": False, "error": "market_id required"})
 
+        elif self.path == "/api/cancel-all":
+            executor = _state.get("executor")
+            if executor:
+                try:
+                    client = executor._get_clob_client() if hasattr(executor, '_get_clob_client') else None
+                    if not client:
+                        from executor import _get_clob_client
+                        client = _get_clob_client()
+                    if client:
+                        result = client.cancel_all()
+                        logger.info(f"Cancelled all orders: {result}")
+                        self._json_response({"ok": True, "action": "all_orders_cancelled", "result": str(result)})
+                    else:
+                        self._json_response({"ok": False, "error": "CLOB client not available"})
+                except Exception as e:
+                    self._json_response({"ok": False, "error": str(e)})
+            else:
+                self._json_response({"ok": False, "error": "executor not ready"})
+
         elif self.path == "/api/close":
             token_id = body.get("token_id", "")
             size = float(body.get("size", 0))
