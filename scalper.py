@@ -357,89 +357,30 @@ class Scalper:
 
     def _check_signal(self, mkt: dict) -> Optional[dict]:
         """Check if a market has a tradeable signal."""
-        tick = mkt.get("tick_change", 0)  # Change since last tick (~5-30s)
-        rt = mkt.get("rt_change", 0)  # Change over 5 min window
-        h = mkt["h_change"]  # Hourly change
-        d = mkt["d_change"]  # Daily change
+        h = mkt["h_change"]
+        d = mkt["d_change"]
         vol24 = mkt["vol24"]
         price = mkt["yes_price"]
+        no_price = mkt["no_price"]
         threshold = config.SCALP_MEAN_REVERSION_THRESHOLD
 
-        # Instant tick signal (price just moved THIS tick)
-        if abs(tick) >= threshold * 0.5:
-            if tick < 0:
-                return {
-                    "type": "instant_dip",
-                    "direction": "yes",
-                    "token_id": mkt["yes_token"],
-                    "price": price,
-                    "reason": f"Just dropped {tick:+.2%} this tick, buying dip",
-                }
-            else:
-                return {
-                    "type": "instant_spike",
-                    "direction": "no",
-                    "token_id": mkt["no_token"],
-                    "price": mkt["no_price"],
-                    "reason": f"Just spiked {tick:+.2%} this tick, buying NO",
-                }
+        # Buy the side that dropped — expect mean reversion
+        if h < -threshold:
+            return {"type": "dip", "direction": "yes", "token_id": mkt["yes_token"],
+                    "price": price, "reason": f"YES dropped {h:+.1%} in 1h"}
 
-        # Short-term signal (moved in last 5 min)
-        if abs(rt) >= threshold:
-            if rt < 0:
-                return {
-                    "type": "rt_dip",
-                    "direction": "yes",
-                    "token_id": mkt["yes_token"],
-                    "price": price,
-                    "reason": f"Dropped {rt:+.1%} in last 5min, buying dip",
-                }
-            else:
-                return {
-                    "type": "rt_spike",
-                    "direction": "no",
-                    "token_id": mkt["no_token"],
-                    "price": mkt["no_price"],
-                    "reason": f"Spiked {rt:+.1%} in last 5min, buying NO for pullback",
-                }
+        if h > threshold:
+            return {"type": "dip", "direction": "no", "token_id": mkt["no_token"],
+                    "price": no_price, "reason": f"YES spiked {h:+.1%} in 1h, buying NO"}
 
-        # Hourly mean reversion (price moved, expect correction)
-        if abs(h) >= threshold * 2:
-            if h < 0:
-                return {
-                    "type": "mean_reversion",
-                    "direction": "yes",
-                    "token_id": mkt["yes_token"],
-                    "price": price,
-                    "reason": f"YES dropped {h:+.1%} in 1h, expecting bounce",
-                }
-            else:
-                return {
-                    "type": "mean_reversion",
-                    "direction": "no",
-                    "token_id": mkt["no_token"],
-                    "price": mkt["no_price"],
-                    "reason": f"YES spiked {h:+.1%} in 1h, buying NO",
-                }
+        # Daily momentum with volume
+        if d < -0.03 and vol24 > 5000:
+            return {"type": "momentum", "direction": "yes", "token_id": mkt["yes_token"],
+                    "price": price, "reason": f"YES down {d:+.1%} daily, vol ${vol24:,.0f}"}
 
-        # Momentum: strong daily trend with volume
-        if abs(d) > 0.03 and vol24 > 10000:
-            if d > 0:
-                return {
-                    "type": "momentum",
-                    "direction": "yes",
-                    "token_id": mkt["yes_token"],
-                    "price": price,
-                    "reason": f"Momentum {d:+.1%} daily, vol ${vol24:,.0f}",
-                }
-            else:
-                return {
-                    "type": "momentum",
-                    "direction": "no",
-                    "token_id": mkt["no_token"],
-                    "price": mkt["no_price"],
-                    "reason": f"Momentum {d:+.1%} daily, vol ${vol24:,.0f}",
-                }
+        if d > 0.03 and vol24 > 5000:
+            return {"type": "momentum", "direction": "no", "token_id": mkt["no_token"],
+                    "price": no_price, "reason": f"YES up {d:+.1%} daily, buying NO, vol ${vol24:,.0f}"}
 
         return None
 
