@@ -23,6 +23,7 @@ from risk_manager import RiskManager
 from edge_finder import EdgeFinder
 from executor import Executor
 import config
+import db
 
 # ─── Logging Setup ────────────────────────────────────────────────────
 logging.basicConfig(
@@ -169,6 +170,16 @@ def run_trading_loop():
     # Start health check server for Railway
     start_health_server()
 
+    # Acquire leader lock — only one instance trades at a time
+    is_leader = False
+    if config.DATABASE_URL:
+        is_leader = db.try_acquire_leader_lock()
+    else:
+        is_leader = True  # No DB = single instance assumed
+
+    if not is_leader:
+        logger.info("Running in SCAN-ONLY mode (another instance is the leader)")
+
     # Initialize components
     fetcher = MarketFetcher()
     estimator = ProbabilityEstimator()
@@ -202,28 +213,29 @@ def run_trading_loop():
             try:
                 opportunities = finder.scan()
 
-                # Execute top opportunities
-                for opp in opportunities[:3]:  # Max 3 new trades per cycle
-                    if not finder.should_trade(opp):
-                        continue
+                # Execute top opportunities (leader only)
+                if is_leader:
+                    for opp in opportunities[:3]:  # Max 3 new trades per cycle
+                        if not finder.should_trade(opp):
+                            continue
 
-                    token_id = (
-                        opp.market.yes_token_id
-                        if opp.estimate.direction == "yes"
-                        else opp.market.no_token_id
-                    )
-                    target_price = opp.sizing["cost_per_share"]
+                        token_id = (
+                            opp.market.yes_token_id
+                            if opp.estimate.direction == "yes"
+                            else opp.market.no_token_id
+                        )
+                        target_price = opp.sizing["cost_per_share"]
 
-                    order = executor.execute_trade(
-                        token_id=token_id,
-                        direction=opp.estimate.direction,
-                        num_shares=opp.sizing["num_shares"],
-                        target_price=target_price,
-                    )
+                        order = executor.execute_trade(
+                            token_id=token_id,
+                            direction=opp.estimate.direction,
+                            num_shares=opp.sizing["num_shares"],
+                            target_price=target_price,
+                        )
 
-                    if order:
-                        risk_mgr.open_position(opp.estimate, opp.sizing, order.id)
-                        logger.info(f"Trade executed: {opp}")
+                        if order:
+                            risk_mgr.open_position(opp.estimate, opp.sizing, order.id)
+                            logger.info(f"Trade executed: {opp}")
 
                 scan_time = datetime.now(timezone.utc).isoformat()
                 export_dashboard_data(risk_mgr, opportunities, scan_time)
@@ -234,8 +246,8 @@ def run_trading_loop():
             except Exception as e:
                 logger.error(f"Scan cycle error: {e}", exc_info=True)
 
-        # ── Check pending orders ──────────────────────────────────
-        if now - last_order_check >= config.POSITION_CHECK_SECONDS:
+        # ── Check pending orders (leader only) ────────────────────
+        if is_leader and now - last_order_check >= config.POSITION_CHECK_SECONDS:
             try:
                 executor.monitor_pending_orders()
                 last_order_check = now
@@ -255,6 +267,8 @@ def run_trading_loop():
     logger.info("Shutting down...")
     risk_mgr.save_state()
     export_dashboard_data(risk_mgr, opportunities, datetime.now(timezone.utc).isoformat())
+    if is_leader and config.DATABASE_URL:
+        db.release_leader_lock()
     logger.info("Shutdown complete.")
 
 

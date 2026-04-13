@@ -170,6 +170,41 @@ def get_closed_trades(limit: int = 50) -> list[dict]:
         return [dict(row) for row in rows]
 
 
+# ─── Leader Lock ─────────────────────────────────────────────────────
+# Uses PostgreSQL advisory locks. Only one instance can hold the lock.
+# The lock is automatically released when the connection closes (crash, redeploy).
+
+LEADER_LOCK_ID = 8675309  # Arbitrary fixed ID for the trading lock
+
+
+def try_acquire_leader_lock() -> bool:
+    """
+    Try to acquire the trading leader lock.
+    Returns True if this instance is now the leader (can trade).
+    Non-blocking: returns False immediately if another instance holds the lock.
+    """
+    conn = get_connection()
+    with conn.cursor() as cur:
+        cur.execute("SELECT pg_try_advisory_lock(%s)", (LEADER_LOCK_ID,))
+        acquired = cur.fetchone()[0]
+    if acquired:
+        logger.info("Acquired leader lock — this instance will trade")
+    else:
+        logger.info("Leader lock held by another instance — running in scan-only mode")
+    return acquired
+
+
+def release_leader_lock():
+    """Release the trading leader lock."""
+    try:
+        conn = get_connection()
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_advisory_unlock(%s)", (LEADER_LOCK_ID,))
+        logger.info("Released leader lock")
+    except Exception as e:
+        logger.warning(f"Failed to release leader lock: {e}")
+
+
 def get_trade_stats() -> dict:
     """Get aggregate trade statistics."""
     conn = get_connection()
