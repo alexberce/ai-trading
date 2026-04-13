@@ -1,0 +1,8 @@
+.env
+*.log
+state.json
+trades.json
+dashboard_data.json
+__pycache__/
+*.pyc
+.DS_Store
