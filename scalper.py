@@ -373,7 +373,17 @@ class Scalper:
         if price <= 0:
             return None
 
-        max_spend = min(config.SCALP_MAX_POSITION_SIZE, self.risk_mgr.current_bankroll * 0.1)
+        # Use cached balance, account for existing positions
+        available = self.risk_mgr.current_bankroll
+        positions = []
+        try:
+            positions = db.get_live_positions() if config.DATABASE_URL else []
+        except Exception:
+            pass
+        deployed = sum(p.get("total_cost", 0) or p.get("current_value", 0) or 0 for p in positions)
+        free_cash = max(0, available - deployed)
+
+        max_spend = min(config.SCALP_MAX_POSITION_SIZE, free_cash * 0.3)  # Max 30% of free cash
         num_shares = int(max_spend / price) if price > 0 else 0
         if num_shares < 5:  # Polymarket minimum
             return None
