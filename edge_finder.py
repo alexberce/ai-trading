@@ -9,6 +9,7 @@ from market_fetcher import MarketFetcher, Market
 from probability_estimator import ProbabilityEstimator, ProbabilityEstimate
 from risk_manager import RiskManager
 import config
+import db
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +176,16 @@ class EdgeFinder:
         # Verify market is still active
         if not opportunity.market.active or opportunity.market.closed:
             return False
+
+        # Don't trade banned markets
+        if config.DATABASE_URL:
+            try:
+                banned = db.get_banned_markets()
+                if opportunity.market.id in banned or opportunity.market.condition_id in banned:
+                    logger.info(f"Skipping banned market: {opportunity.market.question[:40]}")
+                    return False
+            except Exception:
+                pass
 
         # Don't open duplicate positions in the same market
         if existing_positions:

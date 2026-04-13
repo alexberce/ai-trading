@@ -246,6 +246,7 @@ function renderMarket(m, idx){
         <div class="mkt-q">${X(m.question||'')}</div>
         <div class="mkt-sub">${X((m.reasoning||'').substring(0,100))}</div>
       </div>
+      <button onclick="event.stopPropagation();banMarket('${X(m.market_id||'')}','${X(m.question||'')}')" style="background:var(--bg2);color:var(--t3);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:9px;font-weight:600;cursor:pointer;flex-shrink:0" title="Ban this market">BAN</button>
       <div class="mkt-metrics">
         <div class="mkt-m"><div class="mkt-m-label">Current Price</div><div class="mkt-m-val mono">${P(m.market_prob||m.market_price||0,0)}</div></div>
         <div class="mkt-m"><div class="mkt-m-label">AI Fair Value</div><div class="mkt-m-val mono" style="color:var(--g)">${P(m.estimated_prob||0,0)}</div></div>
@@ -278,6 +279,10 @@ function renderPositions(positions){
         <div style="font-size:10px;color:var(--t3)">VALUE / P&L</div>
         <div class="mono" style="font-size:16px;font-weight:700">${$(p.current_value||p.total_cost)}</div>
         <div class="mono" style="font-size:12px;color:${pnlClr(pnl)}">${pnl>=0?'+':''}${$(pnl)}</div>
+        ${p.token_id?`<div style="margin-top:8px;display:flex;gap:6px;justify-content:flex-end">
+          <button onclick="event.stopPropagation();closeTrade('${X(p.token_id)}',${p.num_shares},${p.cur_price||p.entry_price})" style="background:var(--rd);color:var(--r);border:1px solid var(--r);border-radius:6px;padding:4px 10px;font-size:10px;font-weight:600;cursor:pointer">SELL</button>
+          <button onclick="event.stopPropagation();banMarket('${X(p.market_id||'')}','${X(p.question||'')}')" style="background:var(--bg2);color:var(--t3);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:10px;font-weight:600;cursor:pointer">BAN</button>
+        </div>`:''}
       </div>
     </div>`;
   }).join('');
@@ -363,6 +368,28 @@ function render(){
 
 // ── Tab Switch ──
 document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>{tab=b.dataset.t;expandedId=null;render()}));
+
+// ── Actions ──
+async function apiPost(path, body){
+  try{
+    const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(d.ok){addActivity(d.action||'Action completed','green');loadData()}
+    else{addActivity('Error: '+(d.error||'unknown'),'red')}
+    return d;
+  }catch(e){addActivity('Request failed','red');return null}
+}
+function closeTrade(tokenId, size, price){
+  if(confirm('Sell '+size+' shares at $'+price.toFixed(2)+'?'))
+    apiPost('/api/close',{token_id:tokenId, size:Math.floor(size), price:price});
+}
+function banMarket(marketId, question){
+  if(confirm('Ban "'+question.substring(0,60)+'"? Bot will never trade this market.'))
+    apiPost('/api/ban',{market_id:marketId, question:question});
+}
+function unbanMarket(marketId){
+  apiPost('/api/unban',{market_id:marketId});
+}
 
 // ── Data Loading ──
 async function loadData(){

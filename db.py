@@ -73,6 +73,7 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_trades_market ON trades (market_id)
         """)
     _init_scan_tables()
+    _init_banned_table()
     logger.info("Database initialized")
 
 
@@ -394,6 +395,57 @@ def save_scan_progress(done: int, total: int):
 def get_scan_progress() -> Optional[dict]:
     """Get current scan progress."""
     return load_state("scan_progress")
+
+
+# ─── Banned Markets ──────────────────────────────────────────────────
+
+def _init_banned_table():
+    """Create banned_markets table. Called from init_db()."""
+    conn = get_connection()
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS banned_markets (
+                market_id TEXT PRIMARY KEY,
+                question TEXT,
+                banned_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+
+
+def ban_market(market_id: str, question: str = ""):
+    """Ban a market from trading."""
+    conn = get_connection()
+    with conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO banned_markets (market_id, question)
+               VALUES (%s, %s) ON CONFLICT (market_id) DO NOTHING""",
+            (market_id, question),
+        )
+    logger.info(f"Banned market: {market_id} ({question[:50]})")
+
+
+def unban_market(market_id: str):
+    """Remove a market from the ban list."""
+    conn = get_connection()
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM banned_markets WHERE market_id = %s", (market_id,))
+    logger.info(f"Unbanned market: {market_id}")
+
+
+def get_banned_markets() -> set:
+    """Get set of banned market IDs."""
+    conn = get_connection()
+    with conn.cursor() as cur:
+        cur.execute("SELECT market_id FROM banned_markets")
+        return {row[0] for row in cur.fetchall()}
+
+
+def get_banned_markets_list() -> list[dict]:
+    """Get full list of banned markets."""
+    conn = get_connection()
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("SELECT market_id, question, banned_at FROM banned_markets ORDER BY banned_at DESC")
+        return [dict(row) for row in cur.fetchall()]
 
 
 def get_trade_stats() -> dict:

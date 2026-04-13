@@ -124,6 +124,7 @@ def build_dashboard_payload() -> dict:
         "opportunities": opportunities,
         "scan_progress": scan_progress,
         "scanned_markets": estimates,
+        "banned_markets": db.get_banned_markets_list() if config.DATABASE_URL else [],
     }
 
 
@@ -131,6 +132,47 @@ def build_dashboard_payload() -> dict:
 
 class AppHandler(BaseHTTPRequestHandler):
     """HTTP handler for dashboard, SSE, health check, and API."""
+
+    def do_POST(self):
+        content_len = int(self.headers.get("Content-Length", 0))
+        body = json.loads(self.rfile.read(content_len)) if content_len > 0 else {}
+
+        if self.path == "/api/ban":
+            market_id = body.get("market_id", "")
+            question = body.get("question", "")
+            if market_id and config.DATABASE_URL:
+                db.ban_market(market_id, question)
+                self._json_response({"ok": True, "action": "banned", "market_id": market_id})
+            else:
+                self._json_response({"ok": False, "error": "market_id required"})
+
+        elif self.path == "/api/unban":
+            market_id = body.get("market_id", "")
+            if market_id and config.DATABASE_URL:
+                db.unban_market(market_id)
+                self._json_response({"ok": True, "action": "unbanned", "market_id": market_id})
+            else:
+                self._json_response({"ok": False, "error": "market_id required"})
+
+        elif self.path == "/api/close":
+            token_id = body.get("token_id", "")
+            size = int(body.get("size", 0))
+            price = float(body.get("price", 0))
+            if token_id and size > 0 and price > 0:
+                executor = _state.get("executor")
+                if executor:
+                    order = executor.place_order(token_id, "SELL", price, size)
+                    if order:
+                        self._json_response({"ok": True, "action": "sell_order_placed", "order_id": order.id})
+                    else:
+                        self._json_response({"ok": False, "error": "order failed"})
+                else:
+                    self._json_response({"ok": False, "error": "executor not ready"})
+            else:
+                self._json_response({"ok": False, "error": "token_id, size, price required"})
+        else:
+            self.send_response(404)
+            self.end_headers()
 
     def do_GET(self):
         if self.path == "/":
