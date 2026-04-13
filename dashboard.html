@@ -310,7 +310,7 @@ document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>{tab
 
 // Actions
 async function apiPost(p,b){try{const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});const d=await r.json();if(d.ok){addAct(d.action||'Done','green');loadData()}else addAct(d.error||'Error','red');return d}catch(e){addAct('Failed','red')}}
-function closeTrade(t,s,p,ep,mid,q){if(confirm('Close '+s+' shares at $'+p.toFixed(2)+'?'))apiPost('/api/close',{token_id:t,size:Math.floor(s),price:p,entry_price:ep||p,market_id:mid||'',question:q||''})}
+function closeTrade(t,s,p,ep,mid,q){if(confirm('Close '+s+' shares at $'+p.toFixed(2)+'?'))apiPost('/api/close',{token_id:t,size:s,price:p,entry_price:ep||p,market_id:mid||'',question:q||''})}
 function banMarket(id,q){if(confirm('Ban "'+q.substring(0,50)+'"?'))apiPost('/api/ban',{market_id:id,question:q})}
 
 async function loadData(){try{const r=await fetch('/api/dashboard');if(r.ok){data=await r.json();render()}}catch(e){}}
