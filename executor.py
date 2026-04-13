@@ -9,6 +9,7 @@ import time
 import json
 import hmac
 import hashlib
+import base64
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -74,21 +75,23 @@ class Executor:
         self.filled_orders: list[Order] = []
 
     def _get_headers(self, method: str, path: str, body: str = "") -> dict:
-        """Generate authentication headers for CLOB API."""
+        """Generate L2 authentication headers for CLOB API."""
         timestamp = str(int(time.time()))
-        message = timestamp + method.upper() + path + body
+        message = timestamp + method.upper() + path
+        if body:
+            message += body.replace("'", '"')
 
-        signature = hmac.new(
-            self.api_secret.encode("utf-8"),
-            message.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
+        # Secret is base64url-encoded — decode it before HMAC
+        secret_bytes = base64.urlsafe_b64decode(self.api_secret)
+        h = hmac.new(secret_bytes, message.encode("utf-8"), hashlib.sha256)
+        signature = base64.urlsafe_b64encode(h.digest()).decode("utf-8")
 
         return {
-            "POLY-API-KEY": self.api_key,
-            "POLY-SIGNATURE": signature,
-            "POLY-TIMESTAMP": timestamp,
-            "POLY-PASSPHRASE": self.api_passphrase,
+            "POLY_ADDRESS": config.WALLET_ADDRESS,
+            "POLY_SIGNATURE": signature,
+            "POLY_TIMESTAMP": timestamp,
+            "POLY_API_KEY": self.api_key,
+            "POLY_PASSPHRASE": self.api_passphrase,
             "Content-Type": "application/json",
         }
 
