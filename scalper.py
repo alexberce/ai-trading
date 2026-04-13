@@ -142,14 +142,13 @@ class Scalper:
 
             if reason:
                 logger.info(f"SCALP EXIT: {question[:40]} — {reason}")
-                floor_price = round(max(cur * 0.90, 0.01), 2)
+                floor_price = round(max(cur * 0.95, 0.01), 2)
                 try:
-                    order = self.executor.place_order(
+                    order = self.executor.place_market_order(
                         token_id=token_id,
                         side="SELL",
-                        price=floor_price,
-                        size=int(shares),
-                        order_type="FOK",
+                        amount=shares,  # SELL: amount = shares
+                        price=floor_price,  # Min acceptable price (5% slippage)
                     )
                     if order:
                         actions.append({
@@ -392,24 +391,26 @@ class Scalper:
         deployed = sum(p.get("total_cost", 0) or p.get("current_value", 0) or 0 for p in positions)
         free_cash = max(0, available - deployed)
 
-        max_spend = min(config.SCALP_MAX_POSITION_SIZE, free_cash * 0.3)  # Max 30% of free cash
-        num_shares = int(max_spend / price) if price > 0 else 0
-        if num_shares < 5:  # Polymarket minimum
+        spend = min(config.SCALP_MAX_POSITION_SIZE, free_cash * 0.3)  # Max 30% of free cash
+        if spend < 1:
             return None
 
         logger.info(
             f"SCALP ENTRY: {signal['type']} {signal['direction'].upper()} "
-            f"{mkt['question'][:40]} @ {price:.3f} x{num_shares} "
+            f"{mkt['question'][:40]} — spending ${spend:.2f} at market "
             f"({signal['reason']})"
         )
 
-        order = self.executor.place_order(
+        # Market order: spend $X, fill at best available price
+        # Price is slippage protection — max 5% above current
+        max_price = round(min(price * 1.05, 0.99), 2)
+        order = self.executor.place_market_order(
             token_id=signal["token_id"],
             side="BUY",
-            price=round(price + 0.01, 2),  # Bid 1 cent above to improve fill chance
-            size=num_shares,
-            order_type="GTC",  # Limit order
+            amount=spend,
+            price=max_price,
         )
+        num_shares = int(spend / price) if price > 0 else 0
 
         # Track attempt regardless of success to prevent retry spam
         self._pending_orders[signal["token_id"]] = {

@@ -137,6 +137,52 @@ class Executor:
             "Content-Type": "application/json",
         }
 
+    def place_market_order(
+        self,
+        token_id: str,
+        side: str,
+        amount: float,
+        price: float = 0,
+    ) -> Optional[Order]:
+        """
+        Place a market order (instant fill).
+        BUY: amount = dollars to spend. price = max price (slippage protection).
+        SELL: amount = shares to sell. price = min price (slippage protection).
+        """
+        client = _get_clob_client()
+        if not client:
+            logger.error("CLOB client not available")
+            return None
+
+        try:
+            from py_clob_client.order_builder.constants import BUY, SELL
+            from py_clob_client.clob_types import MarketOrderArgs, OrderType
+
+            order_side = BUY if side.upper() == "BUY" else SELL
+
+            args = MarketOrderArgs(
+                token_id=token_id,
+                amount=amount,
+                side=order_side,
+                price=price,
+            )
+
+            signed = client.create_market_order(args)
+            resp = client.post_order(signed, orderType=OrderType.FOK)
+
+            if resp and resp.get("success"):
+                order = Order(resp)
+                logger.info(f"Market order filled: {side} ${amount:.2f} (ID: {order.id})")
+                return order
+            else:
+                error = resp.get("errorMsg", resp) if resp else "No response"
+                logger.error(f"Market order rejected: {error}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Market order error: {e}")
+            return None
+
     def place_order(
         self,
         token_id: str,
