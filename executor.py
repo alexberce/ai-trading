@@ -289,7 +289,7 @@ class Executor:
                 logger.info(f"Polymarket balance: ${balance:.2f}")
                 return balance
             else:
-                logger.error(f"Balance fetch failed: {resp.status_code} - {resp.text}")
+                logger.error(f"Balance fetch failed: {resp.status_code} - {resp.text} - URL: {resp.url}")
                 return None
         except (requests.RequestException, ValueError) as e:
             logger.error(f"Balance fetch error: {e}")

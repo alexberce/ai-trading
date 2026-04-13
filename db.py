@@ -181,10 +181,15 @@ def try_acquire_leader_lock() -> bool:
     """
     Try to acquire the trading leader lock.
     Returns True if this instance is now the leader (can trade).
-    Non-blocking: returns False immediately if another instance holds the lock.
+
+    First clears any stale locks (from crashed instances), then tries to acquire.
+    Uses pg_try_advisory_lock which is session-scoped — auto-releases on disconnect.
     """
     conn = get_connection()
     with conn.cursor() as cur:
+        # Force-release any stale locks from previous crashed sessions
+        cur.execute("SELECT pg_advisory_unlock_all()")
+        # Now try to acquire
         cur.execute("SELECT pg_try_advisory_lock(%s)", (LEADER_LOCK_ID,))
         acquired = cur.fetchone()[0]
     if acquired:
