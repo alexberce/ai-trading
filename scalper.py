@@ -35,15 +35,6 @@ class Scalper:
         self._price_history: dict[str, list[tuple[float, float]]] = {}  # market_id -> [(timestamp, price)]
         self._HISTORY_WINDOW = 300  # Keep 5 minutes of history
         self._pending_orders: dict[str, dict] = {}  # token_id -> order info
-        self._traded_markets: set[str] = set()  # loaded from DB on init
-        # Load existing positions so we never trade their markets again
-        try:
-            if config.DATABASE_URL:
-                for p in db.get_live_positions():
-                    self._traded_markets.add((p.get("question", "")).lower().strip())
-                logger.info(f"Scalper loaded {len(self._traded_markets)} traded markets from DB")
-        except Exception:
-            pass
 
     def tick(self) -> list[dict]:
         """Run one scalp cycle. Called every SCALP_SCAN_INTERVAL seconds."""
@@ -87,10 +78,8 @@ class Scalper:
             question = mkt.get("question", "")
             q_key = question.lower().strip()
 
-            # Skip if we have ANY position or pending order on this market
+            # Skip if we have ANY position on this market (checked from DB every tick)
             if q_key in existing_questions:
-                continue
-            if q_key in self._traded_markets:
                 continue
 
             signal = self._check_signal(mkt)
@@ -418,7 +407,6 @@ class Scalper:
         )
 
         if order:
-            self._traded_markets.add(mkt["question"].lower().strip())
             self._pending_orders[signal["token_id"]] = {
                 "question": mkt["question"],
                 "direction": signal["direction"],
@@ -426,6 +414,26 @@ class Scalper:
                 "shares": num_shares,
                 "placed_at": time.time(),
             }
+            # Save to DB immediately so next tick sees it
+            if config.DATABASE_URL:
+                try:
+                    positions = db.get_live_positions()
+                    positions.append({
+                        "question": mkt["question"],
+                        "direction": signal["direction"],
+                        "token_id": signal["token_id"],
+                        "market_id": mkt.get("market_id", ""),
+                        "entry_price": price,
+                        "num_shares": num_shares,
+                        "total_cost": round(price * num_shares, 2),
+                        "current_value": round(price * num_shares, 2),
+                        "cur_price": price,
+                        "pnl": 0,
+                        "source": "scalper",
+                    })
+                    db.save_live_positions(positions)
+                except Exception:
+                    pass
             return {
                 "action": "entry",
                 "type": signal["type"],
