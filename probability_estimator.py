@@ -399,9 +399,17 @@ class ProbabilityEstimator:
             min_edge = config.MIN_EDGE_THRESHOLD
 
         llm_estimator.clear_cache()
-        estimates = []
+        estimates = []       # Only those with edge >= threshold
+        all_estimates = []   # Every market estimated
         done_count = 0
         total = len(markets)
+
+        def _process_market(market):
+            """Estimate a single market and categorize it."""
+            est = self.estimate(market)
+            all_estimates.append(est)
+            if est.edge_abs >= min_edge:
+                estimates.append(est)
 
         # Pre-fetch LLM signals in parallel (the slow part)
         if config.LLM_ESTIMATION_ENABLED:
@@ -416,36 +424,30 @@ class ProbabilityEstimator:
                     done_count += 1
                     market = futures[future]
                     try:
-                        future.result()  # Result is cached in llm_estimator
+                        future.result()
                     except Exception as e:
                         logger.error(f"LLM prefetch failed for {market.id}: {e}")
 
-                    # Estimate this market now that its LLM signal is cached
                     try:
-                        est = self.estimate(market)
-                        if est.edge_abs >= min_edge:
-                            estimates.append(est)
+                        _process_market(market)
                     except Exception as e:
                         logger.error(f"Failed to estimate {market.id}: {e}")
 
                     if on_progress:
                         try:
-                            on_progress(done_count, total, estimates)
+                            on_progress(done_count, total, estimates, all_estimates)
                         except Exception:
                             pass
         else:
-            # No LLM — run sequentially (fast)
             for i, market in enumerate(markets):
                 try:
-                    est = self.estimate(market)
-                    if est.edge_abs >= min_edge:
-                        estimates.append(est)
+                    _process_market(market)
                 except Exception as e:
                     logger.error(f"Failed to estimate {market.id}: {e}")
 
                 if on_progress:
                     try:
-                        on_progress(i + 1, total, estimates)
+                        on_progress(i + 1, total, estimates, all_estimates)
                     except Exception:
                         pass
 

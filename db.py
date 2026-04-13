@@ -363,6 +363,7 @@ def get_latest_estimates() -> list[dict]:
             FROM estimates
             WHERE scan_id = (SELECT MAX(id) FROM scan_results)
             ORDER BY ABS(edge) DESC
+            LIMIT 100
         """)
         return [dict(row) for row in cur.fetchall()]
 

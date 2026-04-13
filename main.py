@@ -319,13 +319,16 @@ def run_trading_loop():
             try:
                 all_estimates = []
 
-                def _on_progress(done, total, estimates):
+                def _on_progress(done, total, with_edge, all_est):
                     all_estimates.clear()
-                    all_estimates.extend(estimates)
+                    all_estimates.extend(all_est)
                     if config.DATABASE_URL:
                         db.save_scan_progress(done, total)
-                    broadcast_sse("scan_progress", {"done": done, "total": total})
-                    logger.info(f"Scan: {done}/{total} markets, {len(estimates)} with edge")
+                    broadcast_sse("scan_progress", {
+                        "done": done, "total": total,
+                        "scanned_markets": [e.to_dict() for e in all_est],
+                    })
+                    logger.info(f"Scan: {done}/{total} markets, {len(with_edge)} with edge")
 
                 opportunities = finder.scan(on_progress=_on_progress)
                 scan_duration = time.time() - scan_start
@@ -338,9 +341,9 @@ def run_trading_loop():
                         opportunities_count=len(opportunities),
                         duration=scan_duration,
                     )
-                    db.save_estimates(scan_id, [e.to_dict() for e in all_estimates])
+                    db.save_estimates(scan_id, [e.to_dict() for e in all_estimates])  # ALL markets, not just edge
                     db.save_opportunities(scan_id, [o.to_dict() for o in opportunities])
-                    db.save_scan_progress(0, 0)  # Clear progress
+                    db.save_scan_progress(0, 0)  # Clear progress (hides bar)
 
                 # Execute top opportunities (leader only)
                 if is_leader:

@@ -224,7 +224,7 @@ function renderHistory(positions) {
 
 function renderScanned(markets, progress) {
   let header = '';
-  if (progress) {
+  if (progress && progress.total > 0 && progress.done < progress.total) {
     const pctDone = Math.round((progress.done / progress.total) * 100);
     header = `<div style="margin-bottom:12px;padding:12px 16px;background:var(--card-alt);border-radius:8px;font-size:13px">
       <div style="display:flex;justify-content:space-between;margin-bottom:6px">
@@ -338,7 +338,11 @@ function connectSSE() {
 
   evtSource.addEventListener('scan_progress', (e) => {
     if (data) {
-      data.scan_progress = JSON.parse(e.data);
+      const progress = JSON.parse(e.data);
+      data.scan_progress = {done: progress.done, total: progress.total};
+      if (progress.scanned_markets) {
+        data.scanned_markets = progress.scanned_markets;
+      }
       render();
     }
   });
