@@ -4,6 +4,7 @@ Pulls active markets from Polymarket's Gamma API and CLOB API.
 Filters for tradeable markets with sufficient liquidity.
 """
 import time
+import json
 import logging
 import requests
 from datetime import datetime, timezone
@@ -64,6 +65,17 @@ class Market:
             outcomes = self.raw.get("outcomes", [])
             prices = self.raw.get("outcomePrices", [])
             token_ids = self.raw.get("clobTokenIds", [])
+
+            # These fields can be JSON strings instead of lists
+            if isinstance(outcomes, str):
+                try: outcomes = json.loads(outcomes)
+                except: outcomes = []
+            if isinstance(prices, str):
+                try: prices = json.loads(prices)
+                except: prices = []
+            if isinstance(token_ids, str):
+                try: token_ids = json.loads(token_ids)
+                except: token_ids = []
 
             if outcomes and prices and token_ids and len(outcomes) >= 2:
                 for i, outcome in enumerate(outcomes):
