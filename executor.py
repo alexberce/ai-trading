@@ -307,16 +307,34 @@ class Executor:
         )
 
     def get_balance(self) -> Optional[float]:
-        """Fetch USDC cash + position value from Polymarket."""
-        if not self.api_key:
-            logger.error("No API key configured — cannot fetch balance")
+        """Fetch balance from Polymarket. Uses Data API (no proxy needed)."""
+        proxy_wallet = config.PROXY_WALLET_ADDRESS
+        if not proxy_wallet:
+            logger.error("No PROXY_WALLET_ADDRESS configured")
             return None
 
-        # Cash from CLOB (signature_type=2 for proxy wallets)
-        cash = 0.0
-        path = "/balance-allowance"
-        headers = self._get_headers("GET", path)
+        # Get position value from Data API (public, no proxy)
+        positions_value = 0.0
         try:
+            resp = requests.get(
+                "https://data-api.polymarket.com/value",
+                params={"user": proxy_wallet},
+                headers={"User-Agent": "Mozilla/5.0"},
+                proxies={"http": None, "https": None},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data and isinstance(data, list) and len(data) > 0:
+                    positions_value = float(data[0].get("value", 0))
+        except Exception as e:
+            logger.warning(f"Data API position value fetch failed: {e}")
+
+        # Get cash from CLOB (needs proxy for geoblock)
+        cash = 0.0
+        try:
+            path = "/balance-allowance"
+            headers = self._get_headers("GET", path)
             resp = self.session.get(
                 f"{self.base_url}{path}",
                 headers=headers,
@@ -327,34 +345,26 @@ class Executor:
                 data = resp.json()
                 raw = float(data.get("balance", "0"))
                 cash = raw / 1_000_000 if raw > 1_000_000 else raw
-                logger.info(f"CLOB cash balance: ${cash:.2f}")
         except Exception as e:
-            logger.warning(f"CLOB balance fetch error: {e}")
+            logger.warning(f"CLOB balance fetch failed (proxy issue?): {e}")
 
-        # Position value from Data API (public)
-        positions_value = 0.0
-        proxy_wallet = config.PROXY_WALLET_ADDRESS
-        if proxy_wallet:
+        # If CLOB failed, use last known cash from DB
+        if cash == 0 and config.DATABASE_URL:
             try:
-                resp = requests.get(
-                    "https://data-api.polymarket.com/value",
-                    params={"user": proxy_wallet},
-                    headers={"User-Agent": "Mozilla/5.0"},
-                    proxies={"http": None, "https": None},
-                    timeout=10,
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if data and isinstance(data, list) and len(data) > 0:
-                        positions_value = float(data[0].get("value", 0))
-            except Exception as e:
-                logger.warning(f"Data API position value fetch failed: {e}")
+                import db
+                prev = db.get_balance()
+                if prev and prev.get("cash", 0) > 0:
+                    cash = prev["cash"]
+                    logger.info(f"Using cached cash balance: ${cash:.2f}")
+            except Exception:
+                pass
 
         total = cash + positions_value
-        if total == 0 and not cash and not positions_value:
-            logger.warning("Both CLOB and Data API returned 0 balance")
+        if total == 0:
+            logger.warning("Balance returned 0 — proxy may be down")
             return None
-        logger.info(f"Polymarket balance: ${cash:.2f} cash + ${positions_value:.2f} positions = ${total:.2f} total")
+
+        logger.info(f"Balance: ${cash:.2f} cash + ${positions_value:.2f} positions = ${total:.2f}")
         return total
 
     def get_positions(self) -> list[dict]:
