@@ -81,7 +81,7 @@ class Scalper:
         # Only count scalp-initiated positions (not LLM or manual)
         # For now, count all — but don't block if under total limit
         open_count = len(existing)
-        if open_count >= config.SCALP_MAX_CONCURRENT + 10:  # Allow 10 non-scalp positions
+        if open_count >= config.SCALP_MAX_CONCURRENT:
             return actions
 
         # Find entry signals
