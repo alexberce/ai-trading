@@ -31,6 +31,12 @@ def _get_clob_client():
         return None
 
     try:
+        # Set proxy env var before importing — py-clob-client uses httpx which reads HTTPS_PROXY
+        import os
+        if config.PROXY_URL:
+            os.environ["HTTPS_PROXY"] = config.PROXY_URL
+            os.environ["HTTP_PROXY"] = config.PROXY_URL
+
         from py_clob_client.client import ClobClient
         from py_clob_client.clob_types import ApiCreds
 
@@ -46,6 +52,7 @@ def _get_clob_client():
             key=config.PRIVATE_KEY,
             creds=creds,
             signature_type=2,  # Proxy wallet
+            funder=config.PROXY_WALLET_ADDRESS,  # The proxy wallet that holds funds
         )
 
         logger.info("CLOB client initialized with order signing")
@@ -148,40 +155,27 @@ class Executor:
 
         try:
             from py_clob_client.order_builder.constants import BUY, SELL
+            from py_clob_client.clob_types import OrderArgs, PartialCreateOrderOptions
 
             order_side = BUY if side.upper() == "BUY" else SELL
 
-            # Get market info for tick size and neg_risk
-            # Default to standard values
+            # Market defaults — Gamma API provides these per market
+            # but they're almost always 0.01 tick and negRisk=False
             tick_size = "0.01"
             neg_risk = False
 
-            # Try to get market-specific info
-            try:
-                resp = self.session.get(
-                    f"{self.base_url}/book",
-                    params={"token_id": token_id},
-                    timeout=10,
-                )
-                if resp.status_code == 200:
-                    book = resp.json()
-                    tick_size = book.get("tick_size", "0.01")
-                    neg_risk = book.get("neg_risk", False)
-            except Exception:
-                pass
-
-            resp = client.create_and_post_order(
-                {
-                    "tokenID": token_id,
-                    "price": round(price, 2),
-                    "size": size,
-                    "side": order_side,
-                },
-                {
-                    "tickSize": tick_size,
-                    "negRisk": neg_risk,
-                },
+            order_args = OrderArgs(
+                token_id=token_id,
+                price=round(price, 2),
+                size=size,
+                side=order_side,
             )
+            options = PartialCreateOrderOptions(
+                tick_size=tick_size,
+                neg_risk=neg_risk,
+            )
+
+            resp = client.create_and_post_order(order_args, options)
 
             if resp and resp.get("success"):
                 order = Order(resp)

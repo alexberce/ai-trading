@@ -27,6 +27,8 @@ class Market:
         self.end_date = raw_data.get("end_date_iso", "")
         self.start_date = raw_data.get("startDateIso", "") or raw_data.get("startDate", "")
         self.created_at = raw_data.get("createdAt", "")
+        self.neg_risk = raw_data.get("negRisk", False)
+        self.tick_size = raw_data.get("orderPriceMinTickSize", "0.01")
         self.active = raw_data.get("active", False)
         self.closed = raw_data.get("closed", False)
         self.volume = float(raw_data.get("volume", 0) or 0)
