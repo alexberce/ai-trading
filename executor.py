@@ -165,10 +165,11 @@ class Executor:
                 amount=amount,
                 side=order_side,
                 price=price,
+                order_type=OrderType.FAK,
             )
 
             signed = client.create_market_order(args)
-            resp = client.post_order(signed, orderType=OrderType.FOK)
+            resp = client.post_order(signed, orderType=OrderType.FAK)
 
             if resp and resp.get("success"):
                 order = Order(resp)
