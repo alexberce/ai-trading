@@ -145,13 +145,14 @@ def export_dashboard_data(
     opportunities: list,
     last_scan_time: str,
     executor: Executor = None,
+    scan_progress: dict = None,
+    all_estimates: list = None,
 ):
     """Export current state as JSON for the dashboard."""
     # Merge bot-opened positions with live Polymarket positions
     positions = list(risk_mgr.open_positions)
     if executor:
         live_positions = executor.get_positions()
-        # Add live positions that aren't already tracked by the bot
         bot_tokens = {p.get("token_id") for p in positions}
         for lp in live_positions:
             if lp.get("token_id") not in bot_tokens:
@@ -164,6 +165,8 @@ def export_dashboard_data(
         "open_positions": positions,
         "closed_positions": risk_mgr.closed_positions[-20:],
         "opportunities": [o.to_dict() for o in opportunities[:15]],
+        "scan_progress": scan_progress,
+        "scanned_markets": [e.to_dict() for e in (all_estimates or [])][:50],
     }
     with open(config.DASHBOARD_DATA_FILE, "w") as f:
         json.dump(data, f, indent=2)
@@ -262,6 +265,10 @@ def run_trading_loop():
     last_rebalance = 0
     opportunities = []
 
+    # Export initial dashboard data immediately so the UI isn't empty
+    export_dashboard_data(risk_mgr, opportunities,
+                          datetime.now(timezone.utc).isoformat(), executor)
+
     while not _shutdown:
         now = time.time()
 
@@ -269,7 +276,29 @@ def run_trading_loop():
         if now - last_scan >= config.SCAN_INTERVAL_SECONDS:
             logger.info("Running market scan...")
             try:
-                opportunities = finder.scan()
+                _all_estimates = []
+
+                def _on_scan_progress(done, total, estimates):
+                    """Update dashboard as markets are processed."""
+                    from edge_finder import Opportunity
+                    _all_estimates.clear()
+                    _all_estimates.extend(estimates)
+                    partial_opps = []
+                    for est in estimates:
+                        sizing = risk_mgr.kelly_size(est)
+                        if sizing["approved"]:
+                            partial_opps.append(Opportunity(estimate=est, sizing=sizing))
+                    partial_opps.sort(key=lambda o: o.score, reverse=True)
+                    export_dashboard_data(
+                        risk_mgr, partial_opps,
+                        datetime.now(timezone.utc).isoformat(), executor,
+                        scan_progress={"done": done, "total": total},
+                        all_estimates=_all_estimates,
+                    )
+                    _health_state["last_scan"] = datetime.now(timezone.utc).isoformat()
+                    logger.info(f"Scan progress: {done}/{total} markets, {len(estimates)} with edge")
+
+                opportunities = finder.scan(on_progress=_on_scan_progress)
 
                 # Execute top opportunities (leader only)
                 if is_leader:

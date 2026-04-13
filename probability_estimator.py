@@ -14,6 +14,7 @@ This module tries to correct for those biases methodically.
 """
 import math
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Optional
 from market_fetcher import Market
@@ -384,23 +385,69 @@ class ProbabilityEstimator:
         self,
         markets: list[Market],
         min_edge: Optional[float] = None,
+        on_progress: Optional[callable] = None,
     ) -> list[ProbabilityEstimate]:
         """
         Estimate probabilities for a batch of markets.
         Returns estimates sorted by edge (largest first).
+
+        Args:
+            on_progress: Optional callback(done, total, estimates_so_far)
+                         called after each market is processed.
         """
         if min_edge is None:
             min_edge = config.MIN_EDGE_THRESHOLD
 
         llm_estimator.clear_cache()
         estimates = []
-        for market in markets:
-            try:
-                est = self.estimate(market)
-                if est.edge_abs >= min_edge:
-                    estimates.append(est)
-            except Exception as e:
-                logger.error(f"Failed to estimate {market.id}: {e}")
+        done_count = 0
+        total = len(markets)
+
+        # Pre-fetch LLM signals in parallel (the slow part)
+        if config.LLM_ESTIMATION_ENABLED:
+            max_workers = min(8, total)
+            logger.info(f"Pre-fetching LLM signals for {total} markets ({max_workers} workers)...")
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                futures = {
+                    pool.submit(llm_estimator.get_llm_signals, m): m
+                    for m in markets
+                }
+                for future in as_completed(futures):
+                    done_count += 1
+                    market = futures[future]
+                    try:
+                        future.result()  # Result is cached in llm_estimator
+                    except Exception as e:
+                        logger.error(f"LLM prefetch failed for {market.id}: {e}")
+
+                    # Estimate this market now that its LLM signal is cached
+                    try:
+                        est = self.estimate(market)
+                        if est.edge_abs >= min_edge:
+                            estimates.append(est)
+                    except Exception as e:
+                        logger.error(f"Failed to estimate {market.id}: {e}")
+
+                    if on_progress:
+                        try:
+                            on_progress(done_count, total, estimates)
+                        except Exception:
+                            pass
+        else:
+            # No LLM — run sequentially (fast)
+            for i, market in enumerate(markets):
+                try:
+                    est = self.estimate(market)
+                    if est.edge_abs >= min_edge:
+                        estimates.append(est)
+                except Exception as e:
+                    logger.error(f"Failed to estimate {market.id}: {e}")
+
+                if on_progress:
+                    try:
+                        on_progress(i + 1, total, estimates)
+                    except Exception:
+                        pass
 
         estimates.sort(key=lambda e: e.effective_edge, reverse=True)
         logger.info(

@@ -10,6 +10,7 @@ Pipeline per market:
 import json
 import time
 import logging
+import threading
 from typing import Optional
 
 import config
@@ -40,13 +41,15 @@ def _get_perplexity_client():
     return _perplexity_client
 
 
-# Simple in-memory cache keyed by market ID, cleared each scan cycle
+# Thread-safe in-memory cache keyed by market ID, cleared each scan cycle
 _cache: dict[str, dict] = {}
+_cache_lock = threading.Lock()
 
 
 def clear_cache():
     """Clear the LLM estimate cache. Call at the start of each scan cycle."""
-    _cache.clear()
+    with _cache_lock:
+        _cache.clear()
 
 
 def get_llm_signals(market) -> Optional[dict]:
@@ -63,8 +66,9 @@ def get_llm_signals(market) -> Optional[dict]:
     if not config.LLM_ESTIMATION_ENABLED:
         return None
 
-    if market.id in _cache:
-        return _cache[market.id]
+    with _cache_lock:
+        if market.id in _cache:
+            return _cache[market.id]
 
     try:
         # Step 1: Get web context from Perplexity
@@ -75,7 +79,8 @@ def get_llm_signals(market) -> Optional[dict]:
 
         if result:
             result["web_context"] = web_context or ""
-            _cache[market.id] = result
+            with _cache_lock:
+                _cache[market.id] = result
             return result
 
     except Exception as e:

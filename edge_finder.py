@@ -99,9 +99,12 @@ class EdgeFinder:
         self.estimator = estimator or ProbabilityEstimator()
         self.risk_mgr = risk_mgr or RiskManager()
 
-    def scan(self, max_markets: int = 200) -> list[Opportunity]:
+    def scan(self, max_markets: int = 200, on_progress=None) -> list[Opportunity]:
         """
         Full scan pipeline. Returns ranked list of opportunities.
+
+        Args:
+            on_progress: Optional callback(done, total, estimates) for live updates.
         """
         logger.info("Starting market scan...")
 
@@ -114,7 +117,9 @@ class EdgeFinder:
             return []
 
         # 2. Estimate probabilities
-        estimates = self.estimator.batch_estimate(markets)
+        estimates = self.estimator.batch_estimate(
+            markets, on_progress=on_progress
+        )
         logger.info(f"Found {len(estimates)} markets with potential edge")
 
         if not estimates:
