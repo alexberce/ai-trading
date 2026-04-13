@@ -120,8 +120,10 @@ class Scalper:
                     and m.yes_token_id
                     and not self._already_in(m)
                 ]
+                logger.info(f"Scalp tick: {len(liquid_markets)} liquid markets, "
+                            f"{len(self.positions)}/{config.SCALP_MAX_CONCURRENT} positions open")
 
-                for market in liquid_markets[:20]:  # Check top 20 liquid markets
+                for market in liquid_markets[:10]:  # Check top 10 liquid markets
                     if len(self.positions) >= config.SCALP_MAX_CONCURRENT:
                         break
 

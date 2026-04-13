@@ -94,7 +94,7 @@
 <div class="stats-grid" id="statsGrid"></div>
 
 <div class="tabs" id="tabs">
-  <button class="tab-btn active" data-tab="scanning" onclick="switchTab('scanning')">Scanning (0)</button>
+  <button class="tab-btn active" data-tab="markets" onclick="switchTab('markets')">Markets (0)</button>
   <button class="tab-btn" data-tab="opportunities" onclick="switchTab('opportunities')">Opportunities (0)</button>
   <button class="tab-btn" data-tab="positions" onclick="switchTab('positions')">Open (0)</button>
   <button class="tab-btn" data-tab="history" onclick="switchTab('history')">History (0)</button>
@@ -131,7 +131,7 @@ const esc = (s) => {
 };
 
 let data = null;
-let currentTab = 'scanning';
+let currentTab = 'markets';
 
 function renderStats(p) {
   const items = [
@@ -294,7 +294,7 @@ function render() {
 
   // Tabs
   document.querySelectorAll('.tab-btn').forEach(b => {
-    if (b.dataset.tab === 'scanning') b.textContent = 'Scanning (' + scanned.length + ')';
+    if (b.dataset.tab === 'markets') b.textContent = 'Markets (' + scanned.length + ')';
     if (b.dataset.tab === 'opportunities') b.textContent = 'Opportunities (' + opps.length + ')';
     if (b.dataset.tab === 'positions') b.textContent = 'Open (' + openPos.length + ')';
     if (b.dataset.tab === 'history') b.textContent = 'History (' + closedPos.length + ')';
