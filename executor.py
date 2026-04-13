@@ -143,10 +143,11 @@ class Executor:
         side: str,
         price: float,
         size: int,
+        order_type: str = "GTC",
     ) -> Optional[Order]:
         """
         Place a signed order via py-clob-client.
-        This handles EIP-712 signing automatically.
+        order_type: GTC (limit), FOK (fill-or-kill/market), FAK (fill-and-kill)
         """
         client = _get_clob_client()
         if not client:
@@ -155,9 +156,16 @@ class Executor:
 
         try:
             from py_clob_client.order_builder.constants import BUY, SELL
-            from py_clob_client.clob_types import OrderArgs
+            from py_clob_client.clob_types import OrderArgs, OrderType
 
             order_side = BUY if side.upper() == "BUY" else SELL
+
+            # Map string to OrderType
+            ot = OrderType.GTC
+            if order_type == "FOK":
+                ot = OrderType.FOK
+            elif order_type == "FAK":
+                ot = OrderType.FAK
 
             order_args = OrderArgs(
                 token_id=token_id,
@@ -166,7 +174,7 @@ class Executor:
                 side=order_side,
             )
 
-            resp = client.create_and_post_order(order_args)
+            resp = client.create_and_post_order(order_args, ot)
 
             if resp and resp.get("success"):
                 order = Order(resp)

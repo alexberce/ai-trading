@@ -186,7 +186,8 @@ class AppHandler(BaseHTTPRequestHandler):
             if token_id and size > 0 and price > 0:
                 executor = _state.get("executor")
                 if executor:
-                    order = executor.place_order(token_id, "SELL", price, size)
+                    # Use FOK (Fill-Or-Kill) = market order, sells immediately at best price
+                    order = executor.place_order(token_id, "SELL", 0.01, size, order_type="FOK")
                     if order:
                         # Record the close in trades table
                         question = body.get("question", "")
