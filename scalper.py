@@ -223,9 +223,8 @@ class Scalper:
                 vol24 = float(m.get("volume24hr") or 0)
                 liq = float(m.get("liquidity") or 0)
 
-                # Must have some movement and liquidity
-                if abs(h_change) < 0.005 and abs(d_change) < 0.01:
-                    continue
+                # Must have liquidity (skip dead markets)
+                # Don't filter on price change — live sports update too fast for hourly stats
                 if liq < config.SCALP_MIN_LIQUIDITY:
                     continue
 
@@ -253,7 +252,7 @@ class Scalper:
                 if not token_ids or len(token_ids) < 2:
                     continue
 
-                # Check resolution time — prefer shorter
+                # Check resolution time — ONLY trade markets ending within 48 hours
                 end = m.get("endDateIso", "")
                 hours_left = None
                 if end:
@@ -262,6 +261,10 @@ class Scalper:
                         hours_left = (end_dt - now).total_seconds() / 3600
                     except:
                         pass
+
+                # Skip long-term markets — only trade what's happening NOW
+                if hours_left is None or hours_left > 48:
+                    continue
 
                 movers.append({
                     "question": m.get("question", ""),
