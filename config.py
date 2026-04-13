@@ -101,7 +101,7 @@ REBALANCE_HOURS = 6            # Re-evaluate all positions every 6 hours
 # ─── LLM Estimation ──────────────────────────────────────────────────
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
-LLM_ESTIMATION_ENABLED = os.getenv("LLM_ESTIMATION_ENABLED", "true").lower() == "true"
+LLM_ESTIMATION_ENABLED = os.getenv("LLM_ESTIMATION_ENABLED", "false").lower() == "true"
 LLM_MODEL = os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001")
 PERPLEXITY_MODEL = os.getenv("PERPLEXITY_MODEL", "sonar")
 LLM_ESTIMATE_WEIGHT = float(os.getenv("LLM_ESTIMATE_WEIGHT", "0.35"))
