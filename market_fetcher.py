@@ -25,6 +25,8 @@ class Market:
         self.description = raw_data.get("description", "")
         self.category = self._extract_category(raw_data)
         self.end_date = raw_data.get("end_date_iso", "")
+        self.start_date = raw_data.get("startDateIso", "") or raw_data.get("startDate", "")
+        self.created_at = raw_data.get("createdAt", "")
         self.active = raw_data.get("active", False)
         self.closed = raw_data.get("closed", False)
         self.volume = float(raw_data.get("volume", 0) or 0)

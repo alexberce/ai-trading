@@ -99,13 +99,15 @@ def _query_perplexity(market) -> Optional[str]:
 
         hours = market.hours_to_resolution
         time_context = f"This market resolves in {hours:.0f} hours." if hours else ""
+        created = f"Market was created on {market.created_at[:10]}. Only events AFTER this date are relevant." if market.created_at else ""
 
         prompt = (
             f"I need current information about this Polymarket prediction market to make a trading decision.\n\n"
             f"Question: {market.question}\n"
             f"Resolution criteria: {market.description[:1000]}\n"
             f"Category: {market.category}\n"
-            f"{time_context}\n\n"
+            f"{time_context}\n"
+            f"{created}\n\n"
             f"What is the latest relevant information? Specifically:\n"
             f"1. Has the event already occurred or been confirmed?\n"
             f"2. What are the most recent developments (last 7 days)?\n"
@@ -141,6 +143,7 @@ def _query_claude(market, web_context: Optional[str] = None) -> Optional[dict]:
 
         hours = market.hours_to_resolution
         time_info = f"Time to resolution: {hours:.0f} hours" if hours else "No end date specified"
+        created_info = f"Market created: {market.created_at[:10]}" if market.created_at else ""
 
         context_block = ""
         if web_context:
@@ -158,13 +161,15 @@ def _query_claude(market, web_context: Optional[str] = None) -> Optional[dict]:
 - Category: {market.category}
 - Current market price (YES): {market.yes_price:.2f} (implies {market.implied_probability:.0%} probability)
 - {time_info}
+- {created_info}
 - Liquidity: ${market.liquidity:,.0f}
 - 24h Volume: ${market.volume_24h:,.0f}
 {context_block}
 ## Critical Instructions
 1. READ THE RESOLUTION CRITERIA CAREFULLY. The description defines exactly what "YES" means. Pay attention to:
    - Specific dates, deadlines, and timeframes
-   - What counts as the triggering event (e.g. "new album" means released AFTER market creation)
+   - What counts as the triggering event
+   - Events that happened BEFORE the market was created DO NOT COUNT unless the description explicitly says otherwise
    - Edge cases and exceptions mentioned in the description
 2. If the event has ALREADY HAPPENED based on web context, the probability should be very high (>95%) or very low (<5%)
 3. Account for the current market price — it reflects the consensus of traders, but markets can be wrong

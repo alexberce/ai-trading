@@ -376,7 +376,8 @@ function connectSSE(){
   const pill=document.getElementById('ssePill');
   const info=document.getElementById('sseInfo');
 
-  es.addEventListener('open',()=>{pill.textContent='Live';pill.className='sse-pill live';info.textContent='SSE: Connected';addActivity('Connected to server','green')});
+  pill.textContent='Live';pill.className='sse-pill live';info.textContent='SSE: Connected';
+  if(!activityLog.some(a=>a.text==='Connected'))addActivity('Connected','green');
 
   es.addEventListener('dashboard',(e)=>{data=JSON.parse(e.data);render()});
 
