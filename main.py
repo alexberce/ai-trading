@@ -236,15 +236,24 @@ def run_trading_loop():
     # Start HTTP server
     start_server()
 
-    # Leader lock
-    is_leader = False
+    # Leader election — force acquire (kill stale locks from crashed deploys)
+    is_leader = True
     if config.DATABASE_URL:
-        is_leader = db.try_acquire_leader_lock()
-    else:
-        is_leader = True
-
-    if not is_leader:
-        logger.info("Running in SCAN-ONLY mode (another instance is the leader)")
+        try:
+            conn = db.get_connection()
+            with conn.cursor() as cur:
+                # Terminate any other backend holding our lock
+                cur.execute("""
+                    SELECT pg_terminate_backend(pid)
+                    FROM pg_stat_activity
+                    WHERE pid != pg_backend_pid()
+                    AND query LIKE '%advisory%'
+                """)
+                cur.execute("SELECT pg_advisory_lock(%s)", (db.LEADER_LOCK_ID,))
+            logger.info("Acquired leader lock (forced)")
+        except Exception as e:
+            logger.warning(f"Leader lock failed: {e}, proceeding as leader anyway")
+            is_leader = True
 
     # Initialize components
     fetcher = MarketFetcher()
