@@ -16,6 +16,11 @@ POLY_API_KEY = os.getenv("POLY_API_KEY", "")
 POLY_API_SECRET = os.getenv("POLY_API_SECRET", "")
 POLY_API_PASSPHRASE = os.getenv("POLY_API_PASSPHRASE", "")
 
+# ─── Proxy (for geoblocked regions) ──────────────────────────────────
+# SOCKS5 proxy for routing CLOB API calls through an allowed region
+# Format: socks5://username:password@host:port
+PROXY_URL = os.getenv("PROXY_URL", "")
+
 # Polymarket wallet addresses
 # WALLET_ADDRESS = baseAddress from CLOB creds (used for API auth)
 # PROXY_WALLET_ADDRESS = the proxy wallet shown in Polymarket UI (used for balance/positions)

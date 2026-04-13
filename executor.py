@@ -71,6 +71,12 @@ class Executor:
         self.api_secret = config.POLY_API_SECRET
         self.api_passphrase = config.POLY_API_PASSPHRASE
         self.session = requests.Session()
+        if config.PROXY_URL:
+            self.session.proxies = {
+                "http": config.PROXY_URL,
+                "https": config.PROXY_URL,
+            }
+            logger.info(f"Using proxy for CLOB API: {config.PROXY_URL.split('@')[-1] if '@' in config.PROXY_URL else config.PROXY_URL}")
         self.pending_orders: list[Order] = []
         self.filled_orders: list[Order] = []
 

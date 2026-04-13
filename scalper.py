@@ -161,6 +161,10 @@ class Scalper:
         avg = sum(history) / len(history)
         deviation = (mid - avg) / avg if avg > 0 else 0
 
+        # Log top deviations for debugging
+        if abs(deviation) > 0.01:
+            logger.info(f"  Signal check {market.question[:40]}: price={mid:.3f} avg={avg:.3f} dev={deviation:+.2%}")
+
         # ── Mean Reversion: price dipped below average ──
         if deviation < -config.SCALP_MEAN_REVERSION_THRESHOLD:
             return {
