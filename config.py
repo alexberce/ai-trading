@@ -16,8 +16,11 @@ POLY_API_KEY = os.getenv("POLY_API_KEY", "")
 POLY_API_SECRET = os.getenv("POLY_API_SECRET", "")
 POLY_API_PASSPHRASE = os.getenv("POLY_API_PASSPHRASE", "")
 
-# Polymarket proxy wallet address
+# Polymarket wallet addresses
+# WALLET_ADDRESS = baseAddress from CLOB creds (used for API auth)
+# PROXY_WALLET_ADDRESS = the proxy wallet shown in Polymarket UI (used for balance/positions)
 WALLET_ADDRESS = os.getenv("WALLET_ADDRESS", "")
+PROXY_WALLET_ADDRESS = os.getenv("PROXY_WALLET_ADDRESS", "")
 
 # ─── Bankroll & Risk Management ──────────────────────────────────────
 BANKROLL = None  # Must be fetched from Polymarket at startup

@@ -265,40 +265,51 @@ class Executor:
         return [o.to_dict() for o in self.filled_orders]
 
     def get_balance(self) -> Optional[float]:
-        """Fetch available USDC collateral balance from Polymarket."""
+        """
+        Fetch portfolio value from Polymarket Data API.
+        Uses the public /value endpoint (no auth needed) with the proxy wallet address.
+        Falls back to CLOB balance-allowance if Data API fails.
+        """
+        proxy_wallet = config.PROXY_WALLET_ADDRESS
+        if proxy_wallet:
+            try:
+                resp = self.session.get(
+                    f"https://data-api.polymarket.com/value",
+                    params={"user": proxy_wallet},
+                    headers={"User-Agent": "Mozilla/5.0"},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data and isinstance(data, list) and len(data) > 0:
+                        value = float(data[0].get("value", 0))
+                        logger.info(f"Polymarket portfolio value: ${value:.2f}")
+                        return value
+            except Exception as e:
+                logger.warning(f"Data API balance fetch failed: {e}")
+
+        # Fallback: CLOB balance-allowance
         if not self.api_key:
             logger.error("No API key configured — cannot fetch balance")
             return None
 
         path = "/balance-allowance"
-        params = {"asset_type": "COLLATERAL"}
         headers = self._get_headers("GET", path)
-
-        logger.info(f"Fetching balance: {self.base_url}{path} | "
-                     f"API key set: {bool(self.api_key)} | "
-                     f"Secret set: {bool(self.api_secret)} | "
-                     f"Wallet: {config.WALLET_ADDRESS[:10]}...")
-
         try:
             resp = self.session.get(
                 f"{self.base_url}{path}",
                 headers=headers,
-                params=params,
+                params={"asset_type": "COLLATERAL"},
                 timeout=10,
             )
-            logger.info(f"Balance response: {resp.status_code} - {resp.text[:500]}")
-
             if resp.status_code == 200:
                 data = resp.json()
-                balance_raw = data.get("balance", "0")
-                balance = float(balance_raw)
-                # USDC has 6 decimals on Polygon
+                balance = float(data.get("balance", "0"))
                 if balance > 1_000_000:
                     balance = balance / 1_000_000
-                logger.info(f"Polymarket balance: ${balance:.2f}")
+                logger.info(f"CLOB balance: ${balance:.2f}")
                 return balance
-            else:
-                return None
-        except (requests.RequestException, ValueError) as e:
-            logger.error(f"Balance fetch error: {e}")
-            return None
+        except Exception as e:
+            logger.error(f"CLOB balance fetch error: {e}")
+
+        return None

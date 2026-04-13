@@ -26,11 +26,12 @@ class Market:
         self.end_date = raw_data.get("end_date_iso", "")
         self.active = raw_data.get("active", False)
         self.closed = raw_data.get("closed", False)
-        self.volume = float(raw_data.get("volume", 0))
-        self.volume_24h = float(raw_data.get("volume_24hr", 0))
-        self.liquidity = float(raw_data.get("liquidity", 0))
+        self.volume = float(raw_data.get("volume", 0) or 0)
+        self.volume_24h = float(raw_data.get("volume_24hr", 0) or 0)
+        self.liquidity = float(raw_data.get("liquidity", 0) or 0)
 
         # Token info for YES/NO outcomes
+        # Gamma API uses outcomePrices + clobTokenIds instead of tokens[]
         self.tokens = raw_data.get("tokens", [])
         self.yes_token_id = ""
         self.no_token_id = ""
@@ -48,6 +49,7 @@ class Market:
         return "default"
 
     def _parse_tokens(self):
+        # Try legacy tokens[] format first
         for token in self.tokens:
             outcome = token.get("outcome", "").lower()
             if outcome == "yes":
@@ -56,6 +58,32 @@ class Market:
             elif outcome == "no":
                 self.no_token_id = token.get("token_id", "")
                 self.no_price = float(token.get("price", 0))
+
+        # Fall back to outcomePrices + clobTokenIds (current Gamma API format)
+        if not self.yes_token_id:
+            outcomes = self.raw.get("outcomes", [])
+            prices = self.raw.get("outcomePrices", [])
+            token_ids = self.raw.get("clobTokenIds", [])
+
+            if outcomes and prices and token_ids and len(outcomes) >= 2:
+                for i, outcome in enumerate(outcomes):
+                    if i >= len(prices) or i >= len(token_ids):
+                        break
+                    price = float(prices[i]) if prices[i] else 0
+                    tid = token_ids[i] if token_ids[i] else ""
+                    if outcome.lower() == "yes":
+                        self.yes_token_id = tid
+                        self.yes_price = price
+                    elif outcome.lower() == "no":
+                        self.no_token_id = tid
+                        self.no_price = price
+
+                # If outcomes aren't "Yes"/"No" (e.g. team names), treat first as yes
+                if not self.yes_token_id and len(token_ids) >= 2:
+                    self.yes_token_id = token_ids[0]
+                    self.yes_price = float(prices[0]) if prices[0] else 0
+                    self.no_token_id = token_ids[1]
+                    self.no_price = float(prices[1]) if prices[1] else 0
 
     @property
     def implied_probability(self) -> float:
@@ -83,7 +111,9 @@ class Market:
         if self.liquidity < config.MIN_LIQUIDITY_USD:
             return False
 
-        if self.volume_24h < config.MIN_VOLUME_24H:
+        # Use volume_24h if available, otherwise use total volume
+        effective_volume = self.volume_24h if self.volume_24h > 0 else self.volume
+        if effective_volume < config.MIN_VOLUME_24H:
             return False
 
         if self.yes_price < config.MIN_PRICE or self.yes_price > config.MAX_PRICE:
