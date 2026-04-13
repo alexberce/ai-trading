@@ -399,6 +399,7 @@ class Scalper:
             side="BUY",
             price=round(price, 2),
             size=num_shares,
+            order_type="FOK",  # Fill immediately or cancel — no stuck limit orders
         )
 
         if order:
