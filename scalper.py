@@ -319,7 +319,17 @@ class Scalper:
                     "event_slug": event_slug,
                 })
 
-            # Track prices for real-time change detection
+            # Use WebSocket prices if available — these update in real-time
+            if hasattr(self, '_market_feed') and self._market_feed:
+                for mkt in movers:
+                    ws_price = self._market_feed.get_price(mkt["yes_token"])
+                    if ws_price and ws_price > 0:
+                        mkt["yes_price"] = ws_price
+                    ws_no = self._market_feed.get_price(mkt["no_token"])
+                    if ws_no and ws_no > 0:
+                        mkt["no_price"] = ws_no
+
+            # Track price history for change detection
             now_ts = time.time()
             for mkt in movers:
                 mid = mkt["market_id"]
@@ -327,21 +337,22 @@ class Scalper:
                 if mid not in self._price_history:
                     self._price_history[mid] = []
                 self._price_history[mid].append((now_ts, price))
-                # Trim old entries
                 self._price_history[mid] = [
                     (t, p) for t, p in self._price_history[mid]
                     if now_ts - t < self._HISTORY_WINDOW
                 ]
-                # Calculate changes at different timeframes
                 history = self._price_history[mid]
                 if len(history) >= 2:
-                    # Change since last tick (real-time, ~5-30 seconds ago)
                     prev_price = history[-2][1]
                     mkt["tick_change"] = (price - prev_price) / prev_price if prev_price > 0 else 0
-
-                    # Change over full window (~5 min)
                     oldest_price = history[0][1]
                     mkt["rt_change"] = (price - oldest_price) / oldest_price if oldest_price > 0 else 0
+
+                    # Use real-time changes as h_change/d_change fallback when Gamma API has zeros
+                    if mkt["h_change"] == 0 and abs(mkt["rt_change"]) > 0:
+                        mkt["h_change"] = mkt["rt_change"]
+                    if mkt["d_change"] == 0 and abs(mkt["rt_change"]) > 0:
+                        mkt["d_change"] = mkt["rt_change"]
                 else:
                     mkt["tick_change"] = 0
                     mkt["rt_change"] = 0
