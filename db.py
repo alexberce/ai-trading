@@ -479,6 +479,16 @@ def get_live_positions() -> list[dict]:
     return load_state("live_positions") or []
 
 
+def save_balance(balance_data: dict):
+    """Cache balance data."""
+    save_state("balance", balance_data)
+
+
+def get_balance() -> dict:
+    """Get cached balance."""
+    return load_state("balance") or {"total": 0, "cash": 0, "positions_value": 0}
+
+
 def _init_banned_table():
     """Create banned_markets table. Called from init_db()."""
     conn = get_connection()

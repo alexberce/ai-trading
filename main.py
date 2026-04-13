@@ -81,86 +81,64 @@ _state = {
 
 
 def build_dashboard_payload() -> dict:
-    """Assemble dashboard data from DB + in-memory state."""
-    risk_mgr = _state.get("risk_mgr")
-    executor = _state.get("executor")
+    """Read ALL data from DB only. Zero API calls. Fast."""
+    if not config.DATABASE_URL:
+        return {"updated_at": datetime.now(timezone.utc).isoformat(), "portfolio": {},
+                "open_positions": [], "closed_positions": [], "opportunities": [],
+                "scanned_markets": [], "all_markets": [], "banned_markets": []}
 
-    # Get ALL positions from Polymarket (single source of truth)
-    # Cache in DB so dashboard always has data even if API is slow
-    positions = []
-    if executor:
-        try:
-            positions = executor.get_positions()
-            if positions and config.DATABASE_URL:
-                db.save_live_positions(positions)
-        except Exception:
-            pass
-    if not positions and config.DATABASE_URL:
-        try:
-            positions = db.get_live_positions()
-        except Exception:
-            pass
+    try:
+        positions = db.get_live_positions()
+        balance = db.get_balance()
+        all_markets = db.get_all_markets()
+        opportunities = db.get_latest_opportunities()
+        estimates = db.get_latest_estimates()
+        scan_progress = db.get_scan_progress()
+        latest_scan = db.get_latest_scan()
+        closed = db.get_closed_trades(20)
+        banned = db.get_banned_markets_list()
+    except Exception as e:
+        logger.warning(f"DB read failed: {e}")
+        return {"updated_at": datetime.now(timezone.utc).isoformat(), "portfolio": {},
+                "open_positions": [], "closed_positions": [], "opportunities": [],
+                "scanned_markets": [], "all_markets": [], "banned_markets": []}
 
-    # Build portfolio from live data
-    total_value = risk_mgr.current_bankroll if risk_mgr else 0
-    initial = risk_mgr.initial_bankroll if risk_mgr else 0
+    total_value = balance.get("total", 0)
+    initial = balance.get("initial", total_value)
     total_exposure = sum(p.get("total_cost", 0) or p.get("current_value", 0) or 0 for p in positions)
     total_pnl = sum(p.get("pnl", 0) or 0 for p in positions)
     total_return = total_pnl / initial if initial > 0 else 0
+
+    risk_mgr = _state.get("risk_mgr")
+    rm_stats = risk_mgr.get_stats() if risk_mgr else {}
 
     portfolio = {
         "bankroll": round(total_value, 2),
         "initial_bankroll": initial,
         "total_return": round(total_return, 4),
-        "total_pnl_closed": round(risk_mgr.get_stats().get("total_pnl_closed", 0) if risk_mgr else 0, 2),
+        "total_pnl_closed": rm_stats.get("total_pnl_closed", 0),
         "open_positions": len(positions),
         "total_exposure": round(total_exposure, 2),
         "exposure_pct": round(total_exposure / total_value, 4) if total_value > 0 else 0,
-        "closed_trades": risk_mgr.get_stats().get("closed_trades", 0) if risk_mgr else 0,
-        "wins": risk_mgr.get_stats().get("wins", 0) if risk_mgr else 0,
-        "losses": risk_mgr.get_stats().get("losses", 0) if risk_mgr else 0,
-        "win_rate": risk_mgr.get_stats().get("win_rate", 0) if risk_mgr else 0,
+        "closed_trades": rm_stats.get("closed_trades", 0),
+        "wins": rm_stats.get("wins", 0),
+        "losses": rm_stats.get("losses", 0),
+        "win_rate": rm_stats.get("win_rate", 0),
         "is_halted": risk_mgr.is_halted if risk_mgr else False,
         "halt_reason": risk_mgr.halt_reason if risk_mgr else "",
     }
-
-    # Read persisted data from DB
-    opportunities = []
-    estimates = []
-    scan_progress = None
-    latest_scan = None
-    closed = []
-    if config.DATABASE_URL:
-        try:
-            opportunities = db.get_latest_opportunities()
-            estimates = db.get_latest_estimates()
-            scan_progress = db.get_scan_progress()
-            latest_scan = db.get_latest_scan()
-            closed = db.get_closed_trades(20)
-        except Exception as e:
-            logger.warning(f"DB read for dashboard failed: {e}")
-
-    # All markets from DB (persisted across deploys)
-    all_markets = []
-    if config.DATABASE_URL:
-        try:
-            all_markets = db.get_all_markets()
-        except Exception:
-            pass
-    if not all_markets:
-        all_markets = _state.get("all_markets", [])
 
     return {
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "last_scan": latest_scan["scanned_at"].isoformat() if latest_scan and latest_scan.get("scanned_at") else _state.get("last_scan"),
         "portfolio": portfolio,
         "open_positions": positions,
-        "closed_positions": closed or (risk_mgr.closed_positions[-20:] if risk_mgr else []),
+        "closed_positions": closed,
         "opportunities": opportunities,
         "scan_progress": scan_progress,
         "scanned_markets": estimates,
         "all_markets": all_markets,
-        "banned_markets": db.get_banned_markets_list() if config.DATABASE_URL else [],
+        "banned_markets": banned,
     }
 
 
@@ -378,37 +356,78 @@ def run_trading_loop():
         except ImportError:
             logger.warning("scalper.py not found, scalping disabled")
 
-    # Fetch all markets for dashboard display
-    last_market_refresh = 0
+    # ── Background Data Sync ─────────────────────────────────────
+    # Fetches from Polymarket APIs and saves to DB.
+    # Dashboard reads ONLY from DB — never calls APIs directly.
+    last_sync = 0
+    SYNC_INTERVAL = 30  # Sync every 30 seconds
 
-    def refresh_all_markets():
-        """Fetch markets and persist to DB."""
-        nonlocal last_market_refresh
-        try:
-            markets = fetcher.fetch_active_markets(limit=500)
-            market_dicts = [
-                {
-                    "market_id": m.id,
-                    "condition_id": m.condition_id,
-                    "question": m.question,
-                    "category": m.category,
-                    "yes_price": m.yes_price,
-                    "no_price": m.no_price,
-                    "liquidity": m.liquidity,
-                    "volume": m.volume,
-                    "end_date": m.end_date,
-                }
-                for m in markets
-            ]
-            if config.DATABASE_URL:
+    def sync_to_db():
+        """Fetch all data from Polymarket and save to DB."""
+        nonlocal last_sync
+        if not config.DATABASE_URL:
+            return
+
+        # 1. Markets (every 60s — slower, lots of data)
+        if not last_sync or (time.time() - last_sync) >= 60:
+            try:
+                markets = fetcher.fetch_active_markets(limit=500)
+                market_dicts = [
+                    {
+                        "market_id": m.id,
+                        "condition_id": m.condition_id,
+                        "question": m.question,
+                        "category": m.category,
+                        "yes_price": m.yes_price,
+                        "no_price": m.no_price,
+                        "liquidity": m.liquidity,
+                        "volume": m.volume,
+                        "end_date": m.end_date,
+                    }
+                    for m in markets
+                ]
                 db.save_markets(market_dicts)
-            _state["all_markets"] = market_dicts
-            last_market_refresh = time.time()
-            logger.info(f"Refreshed {len(markets)} markets")
-        except Exception as e:
-            logger.error(f"Market refresh error: {e}")
+                logger.info(f"Synced {len(markets)} markets to DB")
+            except Exception as e:
+                logger.error(f"Market sync error: {e}")
 
-    refresh_all_markets()
+        # 2. Positions (every 30s) + detect closed positions
+        positions = []
+        try:
+            positions = executor.get_positions()
+            # Detect positions that disappeared (user closed them)
+            prev_positions = db.get_live_positions()
+            prev_tokens = {p.get("token_id") for p in prev_positions}
+            curr_tokens = {p.get("token_id") for p in positions}
+            closed_tokens = prev_tokens - curr_tokens
+            for prev in prev_positions:
+                if prev.get("token_id") in closed_tokens:
+                    pnl = prev.get("pnl", 0) or 0
+                    logger.info(f"Position closed: {prev.get('question', '')[:40]} PnL=${pnl:.2f}")
+            db.save_live_positions(positions)
+        except Exception as e:
+            logger.warning(f"Position sync error: {e}")
+
+        # 3. Balance (every 30s)
+        try:
+            bal = executor.get_balance()
+            if bal is not None:
+                pos_value = sum(p.get("current_value", 0) or 0 for p in positions)
+                db.save_balance({
+                    "total": bal,
+                    "initial": risk_mgr.initial_bankroll,
+                    "cash": bal - pos_value,
+                    "positions_value": pos_value,
+                    "synced_at": datetime.now(timezone.utc).isoformat(),
+                })
+                risk_mgr.sync_bankroll(bal)
+        except Exception as e:
+            logger.warning(f"Balance sync error: {e}")
+
+        last_sync = time.time()
+
+    # Initial sync
+    sync_to_db()
 
     # Broadcast initial state
     broadcast_sse("dashboard", build_dashboard_payload())
@@ -501,9 +520,9 @@ def run_trading_loop():
             except Exception as e:
                 logger.error(f"Scan cycle error: {e}", exc_info=True)
 
-        # ── Refresh market list for dashboard (every 60s) ─────────
-        if now - last_market_refresh >= 60:
-            refresh_all_markets()
+        # ── Sync all data to DB (every 30s) ──────────────────────
+        if now - last_sync >= SYNC_INTERVAL:
+            sync_to_db()
             broadcast_sse("dashboard", build_dashboard_payload())
 
         # ── Check pending orders (leader only) ────────────────────
