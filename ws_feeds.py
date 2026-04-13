@@ -50,7 +50,7 @@ class SportsFeed:
                     on_close=self._on_close,
                     on_ping=self._on_ping,
                 )
-                self._ws.run_forever(ping_interval=5, ping_timeout=10)
+                self._ws.run_forever(ping_interval=10, ping_timeout=5)
             except Exception as e:
                 logger.error(f"Sports WS error: {e}")
             if self._running:
@@ -146,7 +146,7 @@ class MarketFeed:
                     on_error=self._on_error,
                     on_close=self._on_close,
                 )
-                self._ws.run_forever(ping_interval=10, ping_timeout=10)
+                self._ws.run_forever(ping_interval=20, ping_timeout=10)
             except Exception as e:
                 logger.error(f"Market WS error: {e}")
             if self._running:
