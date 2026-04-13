@@ -190,14 +190,16 @@ class EdgeFinder:
             except Exception:
                 pass
 
-        # Don't open duplicate positions in the same market
+        # Don't open duplicate positions in the same market (match on question text too)
         if existing_positions:
             market_id = opportunity.market.id
             condition_id = opportunity.market.condition_id
+            question = opportunity.market.question.lower().strip()
             for pos in existing_positions:
                 pos_market = pos.get("market_id", "")
-                if pos_market == market_id or pos_market == condition_id:
-                    logger.debug(f"Skipping {market_id[:20]} — already have a position")
+                pos_question = pos.get("question", "").lower().strip()
+                if pos_market == market_id or pos_market == condition_id or pos_question == question:
+                    logger.info(f"Skipping — already have position in: {opportunity.market.question[:40]}")
                     return False
 
         return True

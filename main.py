@@ -392,7 +392,7 @@ def run_trading_loop():
         now = time.time()
 
         # ── Scalper cycle (every 30s) ────────────────────────────
-        if scalper and is_leader and now - last_scalp_check >= config.SCALP_SCAN_INTERVAL:
+        if scalper and is_leader and config.TRADING_ENABLED and now - last_scalp_check >= config.SCALP_SCAN_INTERVAL:
             try:
                 actions = scalper.tick()
                 if actions:
@@ -434,8 +434,8 @@ def run_trading_loop():
                     db.save_opportunities(scan_id, [o.to_dict() for o in opportunities])
                     db.save_scan_progress(0, 0)  # Clear progress (hides bar)
 
-                # Execute top opportunities (leader only)
-                if is_leader:
+                # Execute top opportunities (leader only, trading enabled)
+                if is_leader and config.TRADING_ENABLED:
                     # Get all existing positions to avoid duplicates
                     existing = list(risk_mgr.open_positions)
                     try:
