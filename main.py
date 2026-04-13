@@ -85,19 +85,36 @@ def build_dashboard_payload() -> dict:
     risk_mgr = _state.get("risk_mgr")
     executor = _state.get("executor")
 
-    portfolio = risk_mgr.get_stats() if risk_mgr else {}
-
-    # Merge bot positions with live Polymarket positions
-    positions = list(risk_mgr.open_positions) if risk_mgr else []
+    # Get ALL positions from Polymarket (single source of truth)
+    positions = []
     if executor:
         try:
-            live = executor.get_positions()
-            bot_tokens = {p.get("token_id") for p in positions}
-            for lp in live:
-                if lp.get("token_id") not in bot_tokens:
-                    positions.append(lp)
+            positions = executor.get_positions()
         except Exception:
             pass
+
+    # Build portfolio from live data
+    total_value = risk_mgr.current_bankroll if risk_mgr else 0
+    initial = risk_mgr.initial_bankroll if risk_mgr else 0
+    total_exposure = sum(p.get("total_cost", 0) or p.get("current_value", 0) or 0 for p in positions)
+    total_pnl = sum(p.get("pnl", 0) or 0 for p in positions)
+    total_return = total_pnl / initial if initial > 0 else 0
+
+    portfolio = {
+        "bankroll": round(total_value, 2),
+        "initial_bankroll": initial,
+        "total_return": round(total_return, 4),
+        "total_pnl_closed": round(risk_mgr.get_stats().get("total_pnl_closed", 0) if risk_mgr else 0, 2),
+        "open_positions": len(positions),
+        "total_exposure": round(total_exposure, 2),
+        "exposure_pct": round(total_exposure / total_value, 4) if total_value > 0 else 0,
+        "closed_trades": risk_mgr.get_stats().get("closed_trades", 0) if risk_mgr else 0,
+        "wins": risk_mgr.get_stats().get("wins", 0) if risk_mgr else 0,
+        "losses": risk_mgr.get_stats().get("losses", 0) if risk_mgr else 0,
+        "win_rate": risk_mgr.get_stats().get("win_rate", 0) if risk_mgr else 0,
+        "is_halted": risk_mgr.is_halted if risk_mgr else False,
+        "halt_reason": risk_mgr.halt_reason if risk_mgr else "",
+    }
 
     # Read persisted data from DB
     opportunities = []
