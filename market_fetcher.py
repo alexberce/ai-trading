@@ -178,6 +178,8 @@ class MarketFetcher:
             "Accept": "application/json",
             "User-Agent": "PredictionTrader/1.0",
         })
+        # Never use proxy for public APIs
+        self.session.proxies = {"http": None, "https": None}
         self._cache = {}
         self._cache_time = 0
 

@@ -174,7 +174,8 @@ class Executor:
                 side=order_side,
             )
 
-            resp = client.create_and_post_order(order_args, ot)
+            signed_order = client.create_order(order_args)
+            resp = client.post_order(signed_order, orderType=ot)
 
             if resp and resp.get("success"):
                 order = Order(resp)
@@ -339,6 +340,7 @@ class Executor:
                     "https://data-api.polymarket.com/value",
                     params={"user": proxy_wallet},
                     headers={"User-Agent": "Mozilla/5.0"},
+                    proxies={"http": None, "https": None},
                     timeout=10,
                 )
                 if resp.status_code == 200:
@@ -362,11 +364,12 @@ class Executor:
             return []
 
         try:
-            # Use a plain session — Data API is public, proxy can interfere
+            # Use a plain session with NO proxy — Data API is public
             resp = requests.get(
                 "https://data-api.polymarket.com/positions",
                 params={"user": proxy_wallet, "sizeThreshold": "0"},
                 headers={"User-Agent": "Mozilla/5.0"},
+                proxies={"http": None, "https": None},
                 timeout=10,
             )
             if resp.status_code == 200:
