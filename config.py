@@ -94,7 +94,7 @@ ORDER_TIMEOUT_SECONDS = 300    # Cancel unfilled orders after 5 minutes
 MAX_SLIPPAGE = 0.02            # Maximum 2% slippage tolerance
 
 # ─── Scheduling ───────────────────────────────────────────────────────
-SCAN_INTERVAL_SECONDS = 300    # Scan for opportunities every 5 minutes
+SCAN_INTERVAL_SECONDS = int(os.getenv("SCAN_INTERVAL_SECONDS", "1800"))  # Default 30 min
 POSITION_CHECK_SECONDS = 60    # Check positions every minute
 REBALANCE_HOURS = 6            # Re-evaluate all positions every 6 hours
 
@@ -118,7 +118,7 @@ SCALP_MIN_LIQUIDITY = float(os.getenv("SCALP_MIN_LIQUIDITY", "50000"))
 SCALP_MAX_POSITION_SIZE = float(os.getenv("SCALP_MAX_POSITION_SIZE", "20"))  # Max $20 per scalp
 SCALP_MAX_CONCURRENT = int(os.getenv("SCALP_MAX_CONCURRENT", "5"))
 SCALP_SCAN_INTERVAL = int(os.getenv("SCALP_SCAN_INTERVAL", "30"))   # Every 30 seconds
-SCALP_MEAN_REVERSION_THRESHOLD = float(os.getenv("SCALP_MEAN_REVERSION_THRESHOLD", "0.03"))  # 3% deviation from avg
+SCALP_MEAN_REVERSION_THRESHOLD = float(os.getenv("SCALP_MEAN_REVERSION_THRESHOLD", "0.01"))  # 1% deviation from avg
 
 # ─── Logging & State ─────────────────────────────────────────────────
 LOG_FILE = "trading.log"

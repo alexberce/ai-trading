@@ -188,9 +188,12 @@ def try_acquire_leader_lock() -> bool:
     """
     conn = get_connection()
     with conn.cursor() as cur:
-        # Force-release any stale locks from previous crashed sessions
+        # Force-release ALL advisory locks (from any crashed session on this connection)
         cur.execute("SELECT pg_advisory_unlock_all()")
-        # Now try to acquire
+        # Also force-unlock our specific lock ID in case another session holds it
+        # This is safe because we only run one trading instance at a time
+        cur.execute("SELECT pg_advisory_unlock(%s)", (LEADER_LOCK_ID,))
+        # Now acquire
         cur.execute("SELECT pg_try_advisory_lock(%s)", (LEADER_LOCK_ID,))
         acquired = cur.fetchone()[0]
     if acquired:

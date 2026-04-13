@@ -97,9 +97,10 @@ class Scalper:
         # 1. Monitor and exit positions
         for pos in list(self.positions):
             try:
-                mid = self.fetcher.get_midpoint(pos.token_id)
-                if mid is None:
+                sp = self.fetcher.get_spread(pos.token_id)
+                if not sp:
                     continue
+                mid = sp["mid"]
 
                 exit_reason = pos.check_exit(mid)
                 if exit_reason:
@@ -144,9 +145,11 @@ class Scalper:
         Returns signal dict or None.
         """
         token_id = market.yes_token_id
-        mid = self.fetcher.get_midpoint(token_id)
-        if mid is None or mid <= 0:
+        spread_info = self.fetcher.get_spread(token_id)
+        if not spread_info or spread_info["mid"] <= 0:
             return None
+        mid = spread_info["mid"]
+        spread = spread_info["spread"]
 
         # Track price history
         history = self._price_history.setdefault(token_id, [])
@@ -192,9 +195,8 @@ class Scalper:
                     "reason": f"YES price {mid:.3f} is {deviation:.1%} above avg, buying NO",
                 }
 
-        # ── Momentum: check for volume spike ──
-        spread_info = self.fetcher.get_spread(token_id)
-        if spread_info and spread_info["spread"] < 0.02:
+        # ── Momentum: tight spread + consecutive price moves ──
+        if spread < 0.02:
             # Tight spread + price moving up = momentum
             if len(history) >= 3 and all(history[-i] > history[-i-1] for i in range(1, min(3, len(history)))):
                 return {
@@ -202,7 +204,7 @@ class Scalper:
                     "direction": "yes",
                     "token_id": token_id,
                     "price": mid,
-                    "reason": f"Tight spread ({spread_info['spread']:.3f}) + upward momentum",
+                    "reason": f"Tight spread ({spread:.3f}) + upward momentum",
                 }
 
         return None
@@ -291,7 +293,8 @@ class Scalper:
         result = []
         for pos in self.positions:
             d = pos.to_dict()
-            mid = self.fetcher.get_midpoint(pos.token_id)
+            sp = self.fetcher.get_spread(pos.token_id)
+            mid = sp["mid"] if sp else None
             if mid:
                 d["current_price"] = mid
                 d["unrealized_pnl"] = round((mid - pos.entry_price) * pos.num_shares, 2)

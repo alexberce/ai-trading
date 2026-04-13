@@ -262,7 +262,7 @@ class MarketFetcher:
             return None
 
     def get_spread(self, token_id: str) -> Optional[dict]:
-        """Get bid-ask spread for a token."""
+        """Get bid-ask spread for a token using real prices (not $0.01/$0.99 dust)."""
         book = self.get_orderbook(token_id)
         bids = book.get("bids", [])
         asks = book.get("asks", [])
@@ -270,12 +270,25 @@ class MarketFetcher:
         if not bids or not asks:
             return None
 
-        best_bid = float(bids[0].get("price", 0))
-        best_ask = float(asks[0].get("price", 0))
+        # Filter out dust orders far from actual price
+        real_bids = [float(b["price"]) for b in bids if float(b["price"]) > 0.05]
+        real_asks = [float(a["price"]) for a in asks if float(a["price"]) < 0.95]
+
+        if not real_bids or not real_asks:
+            # Fall back to raw best bid/ask
+            best_bid = float(bids[0].get("price", 0))
+            best_ask = float(asks[0].get("price", 0))
+        else:
+            best_bid = max(real_bids)
+            best_ask = min(real_asks)
+
+        spread = best_ask - best_bid
+        mid = (best_bid + best_ask) / 2
 
         return {
             "best_bid": best_bid,
             "best_ask": best_ask,
-            "spread": best_ask - best_bid,
-            "spread_pct": (best_ask - best_bid) / best_ask if best_ask > 0 else 0,
+            "mid": mid,
+            "spread": spread,
+            "spread_pct": spread / best_ask if best_ask > 0 else 0,
         }
