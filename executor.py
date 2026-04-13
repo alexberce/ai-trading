@@ -155,31 +155,9 @@ class Executor:
 
         try:
             from py_clob_client.order_builder.constants import BUY, SELL
-            from py_clob_client.clob_types import OrderArgs, PartialCreateOrderOptions
+            from py_clob_client.clob_types import OrderArgs
 
             order_side = BUY if side.upper() == "BUY" else SELL
-
-            # Market defaults — can be overridden per market
-            tick_size = "0.01"
-            neg_risk = False
-
-            # Pre-resolve tick size to avoid SDK making its own HTTP call through proxy
-            try:
-                tick_resp = self.session.get(
-                    f"{self.base_url}/tick-size",
-                    params={"token_id": token_id},
-                    timeout=10,
-                )
-                if tick_resp.status_code == 200:
-                    ts = tick_resp.json().get("minimum_tick_size", "0.01")
-                    tick_size = str(ts)
-                    logger.info(f"Tick size for {token_id[:20]}: {tick_size}")
-            except Exception as e:
-                logger.warning(f"Tick size fetch failed, using default: {e}")
-
-            # Pre-populate SDK cache so it doesn't fetch
-            client._ClobClient__tick_sizes[token_id] = tick_size
-            client._ClobClient__neg_risk[token_id] = neg_risk
 
             order_args = OrderArgs(
                 token_id=token_id,
@@ -187,12 +165,8 @@ class Executor:
                 size=size,
                 side=order_side,
             )
-            options = PartialCreateOrderOptions(
-                tick_size=tick_size,
-                neg_risk=neg_risk,
-            )
 
-            resp = client.create_and_post_order(order_args, options)
+            resp = client.create_and_post_order(order_args)
 
             if resp and resp.get("success"):
                 order = Order(resp)
