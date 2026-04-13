@@ -112,7 +112,7 @@ LLM_ESTIMATE_WEIGHT = float(os.getenv("LLM_ESTIMATE_WEIGHT", "0.35"))
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 # ─── Scalping Strategy ───────────────────────────────────────────────
-SCALP_ENABLED = os.getenv("SCALP_ENABLED", "true").lower() == "true"
+SCALP_ENABLED = os.getenv("SCALP_ENABLED", "false").lower() == "true"
 SCALP_TAKE_PROFIT = float(os.getenv("SCALP_TAKE_PROFIT", "0.03"))   # Exit at +3 cents
 SCALP_STOP_LOSS = float(os.getenv("SCALP_STOP_LOSS", "0.03"))       # Exit at -3 cents
 SCALP_MAX_HOLD_MINUTES = int(os.getenv("SCALP_MAX_HOLD_MINUTES", "180"))  # Force exit after 3h
