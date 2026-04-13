@@ -337,7 +337,7 @@ class Executor:
         proxy_wallet = config.PROXY_WALLET_ADDRESS
         if proxy_wallet:
             try:
-                resp = self.session.get(
+                resp = requests.get(
                     "https://data-api.polymarket.com/value",
                     params={"user": proxy_wallet},
                     headers={"User-Agent": "Mozilla/5.0"},
@@ -361,7 +361,8 @@ class Executor:
             return []
 
         try:
-            resp = self.session.get(
+            # Use a plain session — Data API is public, proxy can interfere
+            resp = requests.get(
                 "https://data-api.polymarket.com/positions",
                 params={"user": proxy_wallet, "sizeThreshold": "0"},
                 headers={"User-Agent": "Mozilla/5.0"},
