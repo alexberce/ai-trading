@@ -154,7 +154,7 @@ function renderStats(p){
   const unrealizedPnl=positions.reduce((sum,pos)=>sum+(pos.pnl||pos.unrealized_pnl||0),0);
   const totalPnl=(p.total_pnl_closed||0)+unrealizedPnl;
   const totalReturn=p.initial_bankroll>0?totalPnl/p.initial_bankroll:0;
-  const roi=p.closed_trades>0?((p.total_pnl_closed/p.closed_trades)/p.initial_bankroll*100).toFixed(1)+'%':'\u2014';
+  const roi=p.roi_per_trade?p.roi_per_trade.toFixed(1)+'%':'\u2014';
   document.getElementById('stats').innerHTML=`
     <div class="stat-hero">
       <div class="sl">Total Value</div>
@@ -223,7 +223,7 @@ function renderPosRow(p){
     <div class="mono" style="font-size:13px;color:var(--tw);text-align:center">${$(p.cur_price||p.entry_price)}</div>
     <div class="mono" style="font-size:13px;font-weight:700;color:var(--tw);text-align:right">${$(p.current_value||p.total_cost)}</div>
     <div class="mono" style="font-size:13px;font-weight:700;color:${pnlClr(pnl)};text-align:right">${pnl>=0?'+':''}${$(pnl)}</div>
-    <div style="text-align:center">${p.token_id?`<button class="btn-close" onclick="closeTrade('${X(p.token_id)}',${p.num_shares},${p.cur_price||p.entry_price})">Close</button>`:''}</div>
+    <div style="text-align:center">${p.token_id?`<button class="btn-close" onclick="closeTrade('${X(p.token_id)}',${p.num_shares},${p.cur_price||p.entry_price},${p.entry_price||0},'${X(p.market_id||'')}','${X(p.question||'')}')">Close</button>`:''}</div>
   </div>`;
 }
 
@@ -310,7 +310,7 @@ document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>{tab
 
 // Actions
 async function apiPost(p,b){try{const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});const d=await r.json();if(d.ok){addAct(d.action||'Done','green');loadData()}else addAct(d.error||'Error','red');return d}catch(e){addAct('Failed','red')}}
-function closeTrade(t,s,p){if(confirm('Close '+s+' shares at $'+p.toFixed(2)+'?'))apiPost('/api/close',{token_id:t,size:Math.floor(s),price:p})}
+function closeTrade(t,s,p,ep,mid,q){if(confirm('Close '+s+' shares at $'+p.toFixed(2)+'?'))apiPost('/api/close',{token_id:t,size:Math.floor(s),price:p,entry_price:ep||p,market_id:mid||'',question:q||''})}
 function banMarket(id,q){if(confirm('Ban "'+q.substring(0,50)+'"?'))apiPost('/api/ban',{market_id:id,question:q})}
 
 async function loadData(){try{const r=await fetch('/api/dashboard');if(r.ok){data=await r.json();render()}}catch(e){}}

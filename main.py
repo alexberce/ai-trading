@@ -97,6 +97,7 @@ def build_dashboard_payload() -> dict:
         latest_scan = db.get_latest_scan()
         closed = db.get_closed_trades(20)
         banned = db.get_banned_markets_list()
+        trade_stats = db.get_trade_stats()
     except Exception as e:
         logger.warning(f"DB read failed: {e}")
         return {"updated_at": datetime.now(timezone.utc).isoformat(), "portfolio": {},
@@ -105,25 +106,35 @@ def build_dashboard_payload() -> dict:
 
     total_value = balance.get("total", 0)
     initial = balance.get("initial", total_value)
-    total_exposure = sum(p.get("total_cost", 0) or p.get("current_value", 0) or 0 for p in positions)
-    total_pnl = sum(p.get("pnl", 0) or 0 for p in positions)
+    total_exposure = sum(p.get("current_value", 0) or p.get("total_cost", 0) or 0 for p in positions)
+    unrealized_pnl = sum(p.get("pnl", 0) or 0 for p in positions)
+    realized_pnl = float(trade_stats.get("total_pnl", 0) or 0)
+    total_pnl = unrealized_pnl + realized_pnl
     total_return = total_pnl / initial if initial > 0 else 0
 
+    wins = int(trade_stats.get("wins", 0) or 0)
+    losses = int(trade_stats.get("losses", 0) or 0)
+    closed_count = wins + losses
+    win_rate = wins / closed_count if closed_count > 0 else 0
+    avg_pnl = realized_pnl / closed_count if closed_count > 0 else 0
+    roi_per_trade = (avg_pnl / initial * 100) if initial > 0 and closed_count > 0 else 0
+
     risk_mgr = _state.get("risk_mgr")
-    rm_stats = risk_mgr.get_stats() if risk_mgr else {}
 
     portfolio = {
         "bankroll": round(total_value, 2),
         "initial_bankroll": initial,
         "total_return": round(total_return, 4),
-        "total_pnl_closed": rm_stats.get("total_pnl_closed", 0),
+        "total_pnl_closed": round(realized_pnl, 2),
+        "unrealized_pnl": round(unrealized_pnl, 2),
         "open_positions": len(positions),
         "total_exposure": round(total_exposure, 2),
         "exposure_pct": round(total_exposure / total_value, 4) if total_value > 0 else 0,
-        "closed_trades": rm_stats.get("closed_trades", 0),
-        "wins": rm_stats.get("wins", 0),
-        "losses": rm_stats.get("losses", 0),
-        "win_rate": rm_stats.get("win_rate", 0),
+        "closed_trades": closed_count,
+        "wins": wins,
+        "losses": losses,
+        "win_rate": round(win_rate, 4),
+        "roi_per_trade": round(roi_per_trade, 2),
         "is_halted": risk_mgr.is_halted if risk_mgr else False,
         "halt_reason": risk_mgr.halt_reason if risk_mgr else "",
     }
@@ -177,7 +188,22 @@ class AppHandler(BaseHTTPRequestHandler):
                 if executor:
                     order = executor.place_order(token_id, "SELL", price, size)
                     if order:
-                        self._json_response({"ok": True, "action": "sell_order_placed", "order_id": order.id})
+                        # Record the close in trades table
+                        question = body.get("question", "")
+                        entry_price = float(body.get("entry_price", price))
+                        pnl = (price - entry_price) * size
+                        if config.DATABASE_URL:
+                            try:
+                                db.close_trade(
+                                    market_id=body.get("market_id", token_id),
+                                    outcome="manual_close",
+                                    settlement_price=price,
+                                    pnl=round(pnl, 2),
+                                    return_pct=round(pnl / (entry_price * size), 4) if entry_price > 0 else 0,
+                                )
+                            except Exception:
+                                pass
+                        self._json_response({"ok": True, "action": "position_closed", "order_id": order.id, "pnl": round(pnl, 2)})
                     else:
                         self._json_response({"ok": False, "error": "order failed"})
                 else:

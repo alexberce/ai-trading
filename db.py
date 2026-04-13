@@ -90,14 +90,17 @@ def save_state(key: str, value: dict):
         )
 
 
-def load_state(key: str) -> Optional[dict]:
-    """Load a value from the state table."""
+def load_state(key: str):
+    """Load a value from the state table. Returns dict, list, or None."""
     conn = get_connection()
     with conn.cursor() as cur:
         cur.execute("SELECT value FROM state WHERE key = %s", (key,))
         row = cur.fetchone()
         if row:
-            return row[0] if isinstance(row[0], dict) else json.loads(row[0])
+            val = row[0]
+            if isinstance(val, (dict, list)):
+                return val
+            return json.loads(val)
     return None
 
 
