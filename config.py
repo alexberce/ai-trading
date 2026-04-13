@@ -45,14 +45,14 @@ MAX_DRAWDOWN_PCT = 0.15       # Circuit breaker at 15% drawdown from peak
 CORRELATION_LIMIT = 3          # Max positions in same category
 
 # ─── Market Filters ─────────────────────────────────────────────────
-MIN_LIQUIDITY_USD = 5000       # Minimum market liquidity
-MIN_VOLUME_24H = 1000          # Minimum 24h volume
-MIN_TIME_TO_RESOLUTION_HOURS = 24    # Don't trade markets resolving < 24h
-MAX_TIME_TO_RESOLUTION_DAYS = 90     # Don't trade markets > 90 days out
+MIN_LIQUIDITY_USD = 1000       # Minimum market liquidity
+MIN_VOLUME_24H = 0             # No volume filter (volume_24h often null)
+MIN_TIME_TO_RESOLUTION_HOURS = 0     # Trade any timeframe
+MAX_TIME_TO_RESOLUTION_DAYS = 365    # Up to 1 year out
 
-# Price filters - avoid extremes
-MIN_PRICE = 0.05              # Don't buy below 5 cents (too speculative)
-MAX_PRICE = 0.95              # Don't buy above 95 cents (too little upside)
+# Price filters
+MIN_PRICE = 0.01              # Don't buy below 1 cent
+MAX_PRICE = 0.99              # Don't buy above 99 cents
 
 # ─── Probability Estimation ──────────────────────────────────────────
 # Weight given to market price as Bayesian prior

@@ -246,14 +246,43 @@ function renderMarket(m, idx){
         <div class="mkt-q">${X(m.question||'')}</div>
         <div class="mkt-sub">${X((m.reasoning||'').substring(0,100))}</div>
       </div>
-      <button onclick="event.stopPropagation();banMarket('${X(m.market_id||'')}','${X(m.question||'')}')" style="background:var(--bg2);color:var(--t3);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:9px;font-weight:600;cursor:pointer;flex-shrink:0" title="Ban this market">BAN</button>
       <div class="mkt-metrics">
         <div class="mkt-m"><div class="mkt-m-label">Current Price</div><div class="mkt-m-val mono">${P(m.market_prob||m.market_price||0,0)}</div></div>
         <div class="mkt-m"><div class="mkt-m-label">AI Fair Value</div><div class="mkt-m-val mono" style="color:var(--g)">${P(m.estimated_prob||0,0)}</div></div>
         <div class="mkt-m"><div class="mkt-m-label">Mispricing</div><div class="mkt-m-val mono" style="color:${edgeClr(e)}">${e>=0?'+':''}${P(e)}</div></div>
         <div class="mkt-m"><div class="mkt-m-label">AI Certainty</div><div class="mkt-m-val mono">${P(m.confidence||0,0)}</div></div>
       </div>
+      <button onclick="event.stopPropagation();banMarket('${X(m.market_id||'')}','${X(m.question||'')}')" style="background:none;color:var(--r);border:1px solid var(--r);border-radius:6px;padding:4px 10px;font-size:9px;font-weight:700;cursor:pointer;flex-shrink:0;margin-left:8px;opacity:0.6;transition:opacity .2s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.6">BAN</button>
     </div>${detail}
+  </div>`;
+}
+
+function renderMarketRow(m, idx){
+  const e=m.edge||0;
+  const hasAnalysis=m.estimated_prob!=null;
+  const banned=(data.banned_markets||[]).some(b=>b.market_id===m.market_id);
+  const price=m.yes_price||m.market_prob||0;
+  const liq=m.liquidity||0;
+
+  if(banned) return ''; // Hide banned markets
+
+  // If analyzed, show the full detail view
+  if(hasAnalysis) return renderMarket(m, idx);
+
+  // Simple row for unanalyzed markets
+  return `<div class="mkt" style="opacity:0.7">
+    <div class="mkt-row">
+      <div class="mkt-edge-bar" style="background:var(--t3)"></div>
+      <div class="mkt-body">
+        <div class="mkt-q">${X(m.question||'')}</div>
+        <div class="mkt-sub">${m.category||''} &middot; Liq: ${$(liq)}</div>
+      </div>
+      <div class="mkt-metrics">
+        <div class="mkt-m"><div class="mkt-m-label">Price</div><div class="mkt-m-val mono">${P(price,0)}</div></div>
+        <div class="mkt-m"><div class="mkt-m-label">Liquidity</div><div class="mkt-m-val mono" style="font-size:12px">${$(liq)}</div></div>
+      </div>
+      <button onclick="event.stopPropagation();banMarket('${X(m.market_id||m.id||'')}','${X(m.question||'')}')" style="background:none;color:var(--r);border:1px solid var(--r);border-radius:6px;padding:4px 10px;font-size:9px;font-weight:700;cursor:pointer;flex-shrink:0;margin-left:8px;opacity:0.6;transition:opacity .2s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.6">BAN</button>
+    </div>
   </div>`;
 }
 
@@ -281,7 +310,6 @@ function renderPositions(positions){
         <div class="mono" style="font-size:12px;color:${pnlClr(pnl)}">${pnl>=0?'+':''}${$(pnl)}</div>
         ${p.token_id?`<div style="margin-top:8px;display:flex;gap:6px;justify-content:flex-end">
           <button onclick="event.stopPropagation();closeTrade('${X(p.token_id)}',${p.num_shares},${p.cur_price||p.entry_price})" style="background:var(--rd);color:var(--r);border:1px solid var(--r);border-radius:6px;padding:4px 10px;font-size:10px;font-weight:600;cursor:pointer">SELL</button>
-          <button onclick="event.stopPropagation();banMarket('${X(p.market_id||'')}','${X(p.question||'')}')" style="background:var(--bg2);color:var(--t3);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:10px;font-weight:600;cursor:pointer">BAN</button>
         </div>`:''}
       </div>
     </div>`;
@@ -328,7 +356,8 @@ function renderProgress(p){
 function render(){
   if(!data)return;
   const p=data.portfolio||{};
-  const mkts=data.scanned_markets||[];
+  const mkts=data.all_markets||data.scanned_markets||[];
+  const analyzed=data.scanned_markets||[];
   const opps=data.opportunities||[];
   const pos=data.open_positions||[];
   const hist=data.closed_positions||[];
@@ -354,7 +383,14 @@ function render(){
   const progress=renderProgress(prog);
 
   if(tab==='markets'){
-    el.innerHTML=progress+(mkts.length?mkts.map((m,i)=>renderMarket(m,i)).join(''):'<div class="empty">No markets analyzed yet. Waiting for scan...</div>');
+    // Merge: show analyzed data where available, plain listing for rest
+    const analyzedMap={};
+    analyzed.forEach(a=>{analyzedMap[a.market_id]=a});
+    const merged=mkts.map(m=>{
+      const a=analyzedMap[m.market_id||m.id];
+      return a?{...m,...a}:m;
+    });
+    el.innerHTML=progress+(merged.length?merged.map((m,i)=>renderMarketRow(m,i)).join(''):'<div class="empty">Loading markets...</div>');
   }else if(tab==='opportunities'){
     el.innerHTML=opps.length?opps.map((m,i)=>renderMarket(m,100+i)).join(''):'<div class="empty">No trading signals found</div>';
   }else if(tab==='positions'){

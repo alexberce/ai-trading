@@ -115,6 +115,9 @@ def build_dashboard_payload() -> dict:
         except Exception as e:
             logger.warning(f"DB read for dashboard failed: {e}")
 
+    # All markets (for display, not just LLM-analyzed ones)
+    all_markets = _state.get("all_markets", [])
+
     return {
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "last_scan": latest_scan["scanned_at"].isoformat() if latest_scan and latest_scan.get("scanned_at") else _state.get("last_scan"),
@@ -124,6 +127,7 @@ def build_dashboard_payload() -> dict:
         "opportunities": opportunities,
         "scan_progress": scan_progress,
         "scanned_markets": estimates,
+        "all_markets": all_markets,
         "banned_markets": db.get_banned_markets_list() if config.DATABASE_URL else [],
     }
 
@@ -338,6 +342,35 @@ def run_trading_loop():
         except ImportError:
             logger.warning("scalper.py not found, scalping disabled")
 
+    # Fetch all markets for dashboard display
+    last_market_refresh = 0
+
+    def refresh_all_markets():
+        """Fetch all markets for the dashboard — lightweight, no LLM."""
+        nonlocal last_market_refresh
+        try:
+            markets = fetcher.fetch_active_markets(limit=500)
+            _state["all_markets"] = [
+                {
+                    "market_id": m.id,
+                    "condition_id": m.condition_id,
+                    "question": m.question,
+                    "category": m.category,
+                    "yes_price": m.yes_price,
+                    "no_price": m.no_price,
+                    "liquidity": m.liquidity,
+                    "volume": m.volume,
+                    "end_date": m.end_date,
+                }
+                for m in markets
+            ]
+            last_market_refresh = time.time()
+            logger.info(f"Refreshed {len(markets)} markets for dashboard")
+        except Exception as e:
+            logger.error(f"Market refresh error: {e}")
+
+    refresh_all_markets()
+
     # Broadcast initial state
     broadcast_sse("dashboard", build_dashboard_payload())
 
@@ -428,6 +461,11 @@ def run_trading_loop():
 
             except Exception as e:
                 logger.error(f"Scan cycle error: {e}", exc_info=True)
+
+        # ── Refresh market list for dashboard (every 60s) ─────────
+        if now - last_market_refresh >= 60:
+            refresh_all_markets()
+            broadcast_sse("dashboard", build_dashboard_payload())
 
         # ── Check pending orders (leader only) ────────────────────
         if is_leader and now - last_order_check >= config.POSITION_CHECK_SECONDS:

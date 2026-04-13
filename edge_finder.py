@@ -100,7 +100,7 @@ class EdgeFinder:
         self.estimator = estimator or ProbabilityEstimator()
         self.risk_mgr = risk_mgr or RiskManager()
 
-    def scan(self, max_markets: int = 200, on_progress=None) -> list[Opportunity]:
+    def scan(self, max_markets: int = 50, on_progress=None) -> list[Opportunity]:
         """
         Full scan pipeline. Returns ranked list of opportunities.
 
