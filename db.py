@@ -469,6 +469,16 @@ def get_all_markets(active_only: bool = True) -> list[dict]:
         return [dict(row) for row in cur.fetchall()]
 
 
+def save_live_positions(positions: list[dict]):
+    """Cache live positions in the state table."""
+    save_state("live_positions", positions)
+
+
+def get_live_positions() -> list[dict]:
+    """Get cached live positions."""
+    return load_state("live_positions") or []
+
+
 def _init_banned_table():
     """Create banned_markets table. Called from init_db()."""
     conn = get_connection()

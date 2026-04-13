@@ -86,10 +86,18 @@ def build_dashboard_payload() -> dict:
     executor = _state.get("executor")
 
     # Get ALL positions from Polymarket (single source of truth)
+    # Cache in DB so dashboard always has data even if API is slow
     positions = []
     if executor:
         try:
             positions = executor.get_positions()
+            if positions and config.DATABASE_URL:
+                db.save_live_positions(positions)
+        except Exception:
+            pass
+    if not positions and config.DATABASE_URL:
+        try:
+            positions = db.get_live_positions()
         except Exception:
             pass
 
