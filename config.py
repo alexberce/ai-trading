@@ -20,6 +20,7 @@ POLY_API_PASSPHRASE = os.getenv("POLY_API_PASSPHRASE", "")
 # SOCKS5 proxy for routing CLOB API calls through an allowed region
 # Format: socks5://username:password@host:port
 PROXY_URL = os.getenv("PROXY_URL", "")
+READ_ONLY = os.getenv("READ_ONLY", "false").lower() == "true"
 
 # Polymarket wallet
 PRIVATE_KEY = os.getenv("PRIVATE_KEY", "")  # MetaMask private key for signing orders

@@ -289,8 +289,12 @@ def run_trading_loop():
     # Start HTTP server
     start_server()
 
-    # Leader election — force acquire (kill stale locks from crashed deploys)
-    is_leader = True
+    # Leader election
+    if config.READ_ONLY:
+        is_leader = False
+        logger.info("READ-ONLY mode — no trading, no scanning, dashboard only")
+    else:
+        is_leader = True
     if config.DATABASE_URL:
         try:
             conn = db.get_connection()
