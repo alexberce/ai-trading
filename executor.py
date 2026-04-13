@@ -266,15 +266,41 @@ class Executor:
 
     def get_balance(self) -> Optional[float]:
         """
-        Fetch portfolio value from Polymarket Data API.
-        Uses the public /value endpoint (no auth needed) with the proxy wallet address.
-        Falls back to CLOB balance-allowance if Data API fails.
+        Fetch USDC cash balance from Polymarket CLOB API.
+        Uses signature_type=2 for proxy wallet accounts.
+        Also fetches position value from Data API to get total portfolio.
         """
+        if not self.api_key:
+            logger.error("No API key configured — cannot fetch balance")
+            return None
+
+        # Get cash balance from CLOB (signature_type=2 for proxy wallets)
+        cash = 0.0
+        path = "/balance-allowance"
+        headers = self._get_headers("GET", path)
+        try:
+            resp = self.session.get(
+                f"{self.base_url}{path}",
+                headers=headers,
+                params={"asset_type": "COLLATERAL", "signature_type": "2"},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                raw = float(data.get("balance", "0"))
+                cash = raw / 1_000_000 if raw > 1_000_000 else raw
+                logger.info(f"CLOB cash balance: ${cash:.2f}")
+        except Exception as e:
+            logger.error(f"CLOB balance fetch error: {e}")
+            return None
+
+        # Get position value from Data API (public, no auth)
+        positions_value = 0.0
         proxy_wallet = config.PROXY_WALLET_ADDRESS
         if proxy_wallet:
             try:
                 resp = self.session.get(
-                    f"https://data-api.polymarket.com/value",
+                    "https://data-api.polymarket.com/value",
                     params={"user": proxy_wallet},
                     headers={"User-Agent": "Mozilla/5.0"},
                     timeout=10,
@@ -282,34 +308,11 @@ class Executor:
                 if resp.status_code == 200:
                     data = resp.json()
                     if data and isinstance(data, list) and len(data) > 0:
-                        value = float(data[0].get("value", 0))
-                        logger.info(f"Polymarket portfolio value: ${value:.2f}")
-                        return value
+                        positions_value = float(data[0].get("value", 0))
             except Exception as e:
-                logger.warning(f"Data API balance fetch failed: {e}")
+                logger.warning(f"Data API position value fetch failed: {e}")
 
-        # Fallback: CLOB balance-allowance
-        if not self.api_key:
-            logger.error("No API key configured — cannot fetch balance")
-            return None
+        total = cash + positions_value
+        logger.info(f"Polymarket balance: ${cash:.2f} cash + ${positions_value:.2f} positions = ${total:.2f} total")
+        return total
 
-        path = "/balance-allowance"
-        headers = self._get_headers("GET", path)
-        try:
-            resp = self.session.get(
-                f"{self.base_url}{path}",
-                headers=headers,
-                params={"asset_type": "COLLATERAL"},
-                timeout=10,
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                balance = float(data.get("balance", "0"))
-                if balance > 1_000_000:
-                    balance = balance / 1_000_000
-                logger.info(f"CLOB balance: ${balance:.2f}")
-                return balance
-        except Exception as e:
-            logger.error(f"CLOB balance fetch error: {e}")
-
-        return None

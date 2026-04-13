@@ -1,0 +1,30 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://trader:trader@db:5432/trading
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: trader
+      POSTGRES_PASSWORD: trader
+      POSTGRES_DB: trading
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trader"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata:
