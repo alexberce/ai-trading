@@ -418,19 +418,58 @@ def run_trading_loop():
             except Exception as e:
                 logger.error(f"Market sync error: {e}")
 
-        # 2. Positions (every 30s) + detect closed positions
+        # 2. Positions (every 30s) + detect and record closed positions
         positions = []
         try:
             positions = executor.get_positions()
-            # Detect positions that disappeared (user closed them)
             prev_positions = db.get_live_positions()
             prev_tokens = {p.get("token_id") for p in prev_positions}
             curr_tokens = {p.get("token_id") for p in positions}
             closed_tokens = prev_tokens - curr_tokens
+
             for prev in prev_positions:
                 if prev.get("token_id") in closed_tokens:
                     pnl = prev.get("pnl", 0) or 0
+                    entry = prev.get("entry_price", 0) or 0
+                    cur = prev.get("cur_price", entry) or entry
+                    shares = prev.get("num_shares", 0) or 0
+                    cost = prev.get("total_cost", 0) or 0
+                    ret_pct = pnl / cost if cost > 0 else 0
+
                     logger.info(f"Position closed: {prev.get('question', '')[:40]} PnL=${pnl:.2f}")
+
+                    # Record as a closed trade in DB
+                    try:
+                        db.save_trade({
+                            "market_id": prev.get("market_id", ""),
+                            "question": prev.get("question", ""),
+                            "category": prev.get("category", ""),
+                            "direction": prev.get("direction", ""),
+                            "num_shares": shares,
+                            "entry_price": entry,
+                            "total_cost": cost,
+                            "estimated_prob": 0,
+                            "market_prob_at_entry": entry,
+                            "edge_at_entry": 0,
+                            "order_id": "",
+                            "token_id": prev.get("token_id", ""),
+                            "opened_at": prev.get("opened_at"),
+                        })
+                        db.close_trade(
+                            market_id=prev.get("market_id", prev.get("token_id", "")),
+                            outcome="closed",
+                            settlement_price=cur,
+                            pnl=round(pnl, 4),
+                            return_pct=round(ret_pct, 4),
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to record closed trade: {e}")
+
+                    broadcast_sse("trade_closed", {
+                        "question": prev.get("question", ""),
+                        "pnl": round(pnl, 2),
+                    })
+
             db.save_live_positions(positions)
         except Exception as e:
             logger.warning(f"Position sync error: {e}")
