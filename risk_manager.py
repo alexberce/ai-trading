@@ -281,7 +281,7 @@ class RiskManager:
             "initial_bankroll": self.initial_bankroll,
             "total_return": round(
                 (self.current_bankroll - self.initial_bankroll) / self.initial_bankroll, 4
-            ),
+            ) if self.initial_bankroll > 0 else 0,
             "total_pnl_closed": round(total_pnl_closed, 2),
             "peak_bankroll": round(self.peak_bankroll, 2),
             "drawdown": round(drawdown, 4),
