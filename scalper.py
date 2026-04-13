@@ -190,7 +190,7 @@ class Scalper:
                     "https://gamma-api.polymarket.com/events",
                     params={
                         "active": "true", "closed": "false",
-                        "limit": 50, "order": "startDate", "ascending": "false",
+                        "limit": 50, "order": "volume24hr", "ascending": "false",
                     },
                     headers={"User-Agent": "Mozilla/5.0"},
                     proxies={"http": None, "https": None},
