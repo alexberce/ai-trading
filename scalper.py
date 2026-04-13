@@ -347,8 +347,12 @@ class Scalper:
                     mkt["rt_change"] = 0
 
             # Sort by real-time change (most volatile), fall back to hourly
-            movers.sort(key=lambda x: abs(x.get("rt_change", 0)) + abs(x["h_change"]), reverse=True)
-            logger.info(f"Scalper: {len(movers)} active markets, {sum(1 for m in movers if abs(m.get('rt_change',0)) > 0.005)} with real-time movement")
+            movers.sort(key=lambda x: abs(x["h_change"]) + abs(x["d_change"]), reverse=True)
+            with_signal = sum(1 for m in movers if abs(m["h_change"]) >= config.SCALP_MEAN_REVERSION_THRESHOLD or (abs(m["d_change"]) > 0.03 and m["vol24"] > 5000))
+            logger.info(f"Scalper: {len(movers)} active markets, {with_signal} with signals")
+            if movers and with_signal == 0:
+                top = movers[0]
+                logger.info(f"  Top market: {top['question'][:40]} h={top['h_change']:+.4f} d={top['d_change']:+.4f} vol={top['vol24']:.0f}")
             return movers
 
         except Exception as e:
