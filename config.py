@@ -104,16 +104,22 @@ LLM_ESTIMATE_WEIGHT = float(os.getenv("LLM_ESTIMATE_WEIGHT", "0.35"))
 # ─── Database (Railway PostgreSQL plugin provides DATABASE_URL) ──────
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
+# ─── Scalping Strategy ───────────────────────────────────────────────
+SCALP_ENABLED = os.getenv("SCALP_ENABLED", "true").lower() == "true"
+SCALP_TAKE_PROFIT = float(os.getenv("SCALP_TAKE_PROFIT", "0.03"))   # Exit at +3 cents
+SCALP_STOP_LOSS = float(os.getenv("SCALP_STOP_LOSS", "0.03"))       # Exit at -3 cents
+SCALP_MAX_HOLD_MINUTES = int(os.getenv("SCALP_MAX_HOLD_MINUTES", "180"))  # Force exit after 3h
+SCALP_MIN_LIQUIDITY = float(os.getenv("SCALP_MIN_LIQUIDITY", "50000"))
+SCALP_MAX_POSITION_SIZE = float(os.getenv("SCALP_MAX_POSITION_SIZE", "20"))  # Max $20 per scalp
+SCALP_MAX_CONCURRENT = int(os.getenv("SCALP_MAX_CONCURRENT", "5"))
+SCALP_SCAN_INTERVAL = int(os.getenv("SCALP_SCAN_INTERVAL", "30"))   # Every 30 seconds
+SCALP_MEAN_REVERSION_THRESHOLD = float(os.getenv("SCALP_MEAN_REVERSION_THRESHOLD", "0.03"))  # 3% deviation from avg
+
 # ─── Logging & State ─────────────────────────────────────────────────
 LOG_FILE = "trading.log"
 STATE_FILE = "state.json"
 TRADES_FILE = "trades.json"
-DASHBOARD_DATA_FILE = "dashboard_data.json"
 
 # ─── Railway / Health Check ──────────────────────────────────────────
 PORT = int(os.getenv("PORT", "8080"))
 HEALTH_CHECK_ENABLED = os.getenv("HEALTH_CHECK_ENABLED", "true").lower() == "true"
-
-# ─── Dashboard ────────────────────────────────────────────────────────
-DASHBOARD_PORT = PORT
-DASHBOARD_REFRESH_SECONDS = 30

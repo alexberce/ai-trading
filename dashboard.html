@@ -103,7 +103,7 @@
 <div id="content"></div>
 
 <div class="footer">
-  <span>Data updates every 30s</span>
+  <span>SSE: <span id="sseStatus" style="color:var(--text-dim)">Connecting...</span></span>
   <span id="updatedAt"></span>
 </div>
 
@@ -321,8 +321,45 @@ async function loadData() {
   setTimeout(() => { btn.textContent = 'Refresh'; btn.style.opacity = '1'; }, 400);
 }
 
+// Initial load from API
 loadData();
-setInterval(loadData, 30000);
+
+// Real-time updates via SSE
+let evtSource = null;
+function connectSSE() {
+  evtSource = new EventSource('/api/events');
+  document.getElementById('sseStatus').textContent = 'Live';
+  document.getElementById('sseStatus').style.color = 'var(--accent)';
+
+  evtSource.addEventListener('dashboard', (e) => {
+    data = JSON.parse(e.data);
+    render();
+  });
+
+  evtSource.addEventListener('scan_progress', (e) => {
+    if (data) {
+      data.scan_progress = JSON.parse(e.data);
+      render();
+    }
+  });
+
+  evtSource.addEventListener('scan_complete', (e) => {
+    // Full data comes via 'dashboard' event
+  });
+
+  evtSource.addEventListener('trade_executed', (e) => {
+    const trade = JSON.parse(e.data);
+    console.log('Trade executed:', trade);
+  });
+
+  evtSource.onerror = () => {
+    document.getElementById('sseStatus').textContent = 'Reconnecting...';
+    document.getElementById('sseStatus').style.color = 'var(--yellow)';
+    evtSource.close();
+    setTimeout(connectSSE, 3000);
+  };
+}
+connectSSE();
 </script>
 </body>
 </html>

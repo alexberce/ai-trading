@@ -72,6 +72,7 @@ def init_db():
         cur.execute("""
             CREATE INDEX IF NOT EXISTS idx_trades_market ON trades (market_id)
         """)
+    _init_scan_tables()
     logger.info("Database initialized")
 
 
@@ -208,6 +209,187 @@ def release_leader_lock():
         logger.info("Released leader lock")
     except Exception as e:
         logger.warning(f"Failed to release leader lock: {e}")
+
+
+# ─── Scan Results Persistence ────────────────────────────────────────
+
+def _init_scan_tables():
+    """Create scan-related tables. Called from init_db()."""
+    conn = get_connection()
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS scan_results (
+                id SERIAL PRIMARY KEY,
+                scanned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                markets_scanned INTEGER NOT NULL DEFAULT 0,
+                estimates_with_edge INTEGER NOT NULL DEFAULT 0,
+                opportunities_count INTEGER NOT NULL DEFAULT 0,
+                scan_duration_seconds DOUBLE PRECISION
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS estimates (
+                id SERIAL PRIMARY KEY,
+                scan_id INTEGER REFERENCES scan_results(id) ON DELETE CASCADE,
+                market_id TEXT NOT NULL,
+                question TEXT,
+                category TEXT,
+                market_prob DOUBLE PRECISION,
+                estimated_prob DOUBLE PRECISION,
+                edge DOUBLE PRECISION,
+                effective_edge DOUBLE PRECISION,
+                confidence DOUBLE PRECISION,
+                direction TEXT,
+                has_edge BOOLEAN,
+                reasoning TEXT,
+                components JSONB,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS opportunities (
+                id SERIAL PRIMARY KEY,
+                scan_id INTEGER REFERENCES scan_results(id) ON DELETE CASCADE,
+                market_id TEXT NOT NULL,
+                question TEXT,
+                category TEXT,
+                direction TEXT,
+                market_price DOUBLE PRECISION,
+                estimated_prob DOUBLE PRECISION,
+                edge DOUBLE PRECISION,
+                effective_edge DOUBLE PRECISION,
+                confidence DOUBLE PRECISION,
+                score DOUBLE PRECISION,
+                reasoning TEXT,
+                sizing JSONB,
+                liquidity DOUBLE PRECISION,
+                volume_24h DOUBLE PRECISION,
+                hours_to_resolution DOUBLE PRECISION,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+
+
+def save_scan_results(markets_scanned: int, estimates_with_edge: int,
+                      opportunities_count: int, duration: float) -> int:
+    """Insert a scan_results row. Returns the scan_id."""
+    conn = get_connection()
+    with conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO scan_results
+               (markets_scanned, estimates_with_edge, opportunities_count, scan_duration_seconds)
+               VALUES (%s, %s, %s, %s) RETURNING id""",
+            (markets_scanned, estimates_with_edge, opportunities_count, duration),
+        )
+        scan_id = cur.fetchone()[0]
+        # Keep only last 5 scans
+        cur.execute(
+            "DELETE FROM scan_results WHERE id < (SELECT MAX(id) - 4 FROM scan_results)"
+        )
+        return scan_id
+
+
+def save_estimates(scan_id: int, estimates: list[dict]):
+    """Bulk insert estimates for a scan."""
+    if not estimates:
+        return
+    conn = get_connection()
+    with conn.cursor() as cur:
+        psycopg2.extras.execute_values(
+            cur,
+            """INSERT INTO estimates
+               (scan_id, market_id, question, category, market_prob, estimated_prob,
+                edge, effective_edge, confidence, direction, has_edge, reasoning, components)
+               VALUES %s""",
+            [
+                (scan_id, e.get("market_id", ""), e.get("question", ""),
+                 e.get("category", ""), e.get("market_prob", 0),
+                 e.get("estimated_prob", 0), e.get("edge", 0),
+                 e.get("effective_edge", 0), e.get("confidence", 0),
+                 e.get("direction", ""), e.get("has_edge", False),
+                 e.get("reasoning", ""),
+                 json.dumps(e.get("components", {})))
+                for e in estimates
+            ],
+        )
+
+
+def save_opportunities(scan_id: int, opportunities: list[dict]):
+    """Bulk insert opportunities for a scan."""
+    if not opportunities:
+        return
+    conn = get_connection()
+    with conn.cursor() as cur:
+        psycopg2.extras.execute_values(
+            cur,
+            """INSERT INTO opportunities
+               (scan_id, market_id, question, category, direction, market_price,
+                estimated_prob, edge, effective_edge, confidence, score, reasoning,
+                sizing, liquidity, volume_24h, hours_to_resolution)
+               VALUES %s""",
+            [
+                (scan_id, o.get("market_id", ""), o.get("question", ""),
+                 o.get("category", ""), o.get("direction", ""),
+                 o.get("market_price", 0), o.get("estimated_prob", 0),
+                 o.get("edge", 0), o.get("effective_edge", 0),
+                 o.get("confidence", 0), o.get("score", 0),
+                 o.get("reasoning", ""),
+                 json.dumps(o.get("sizing", {})),
+                 o.get("liquidity", 0), o.get("volume_24h", 0),
+                 o.get("hours_to_resolution"))
+                for o in opportunities
+            ],
+        )
+
+
+def get_latest_scan() -> Optional[dict]:
+    """Get the most recent scan result."""
+    conn = get_connection()
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            "SELECT * FROM scan_results ORDER BY scanned_at DESC LIMIT 1"
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def get_latest_estimates() -> list[dict]:
+    """Get all estimates from the latest scan."""
+    conn = get_connection()
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("""
+            SELECT market_id, question, category, market_prob, estimated_prob,
+                   edge, effective_edge, confidence, direction, has_edge, reasoning
+            FROM estimates
+            WHERE scan_id = (SELECT MAX(id) FROM scan_results)
+            ORDER BY ABS(edge) DESC
+        """)
+        return [dict(row) for row in cur.fetchall()]
+
+
+def get_latest_opportunities() -> list[dict]:
+    """Get all opportunities from the latest scan."""
+    conn = get_connection()
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("""
+            SELECT market_id, question, category, direction, market_price,
+                   estimated_prob, edge, effective_edge, confidence, score,
+                   reasoning, sizing, liquidity, volume_24h, hours_to_resolution
+            FROM opportunities
+            WHERE scan_id = (SELECT MAX(id) FROM scan_results)
+            ORDER BY score DESC
+        """)
+        return [dict(row) for row in cur.fetchall()]
+
+
+def save_scan_progress(done: int, total: int):
+    """Save current scan progress to state table."""
+    save_state("scan_progress", {"done": done, "total": total})
+
+
+def get_scan_progress() -> Optional[dict]:
+    """Get current scan progress."""
+    return load_state("scan_progress")
 
 
 def get_trade_stats() -> dict:
