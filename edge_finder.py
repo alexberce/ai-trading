@@ -100,18 +100,21 @@ class EdgeFinder:
         self.estimator = estimator or ProbabilityEstimator()
         self.risk_mgr = risk_mgr or RiskManager()
 
-    def scan(self, max_markets: int = 50, on_progress=None) -> list[Opportunity]:
+    def scan(self, max_markets: int = None, on_progress=None) -> list[Opportunity]:
         """
         Full scan pipeline. Returns ranked list of opportunities.
-
-        Args:
-            on_progress: Optional callback(done, total, estimates) for live updates.
+        Only analyzes top N markets by liquidity to control LLM costs.
         """
-        logger.info("Starting market scan...")
+        if max_markets is None:
+            max_markets = config.LLM_MAX_MARKETS
 
-        # 1. Fetch markets
-        markets = self.fetcher.fetch_active_markets(limit=max_markets)
-        logger.info(f"Fetched {len(markets)} markets passing filters")
+        logger.info(f"Starting market scan (top {max_markets} by liquidity)...")
+
+        # 1. Fetch markets, sorted by liquidity (most liquid first)
+        all_markets = self.fetcher.fetch_active_markets(limit=200)
+        all_markets.sort(key=lambda m: m.liquidity, reverse=True)
+        markets = all_markets[:max_markets]
+        logger.info(f"Analyzing {len(markets)} of {len(all_markets)} markets")
 
         if not markets:
             logger.warning("No markets found")

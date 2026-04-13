@@ -93,7 +93,8 @@ ORDER_TIMEOUT_SECONDS = 300    # Cancel unfilled orders after 5 minutes
 MAX_SLIPPAGE = 0.02            # Maximum 2% slippage tolerance
 
 # ─── Scheduling ───────────────────────────────────────────────────────
-SCAN_INTERVAL_SECONDS = int(os.getenv("SCAN_INTERVAL_SECONDS", "1800"))  # Default 30 min
+SCAN_INTERVAL_SECONDS = int(os.getenv("SCAN_INTERVAL_SECONDS", "3600"))  # Default 1 hour
+LLM_MAX_MARKETS = int(os.getenv("LLM_MAX_MARKETS", "10"))  # Max markets to analyze per scan
 POSITION_CHECK_SECONDS = 60    # Check positions every minute
 REBALANCE_HOURS = 6            # Re-evaluate all positions every 6 hours
 
