@@ -169,48 +169,28 @@ class Scalper:
         try:
             all_raw = []
 
-            # 1. Fetch TODAY's live sports events
+            # 1. Fetch newest events (sports games, crypto 5-min, etc)
+            # Sorted by startDate descending = most recent/upcoming first
             try:
-                from datetime import date, timedelta
-                today = date.today().isoformat()
-                tomorrow = (date.today() + timedelta(days=1)).isoformat()
-
-                # Sports events use tag_id=100639, sorted oldest first
-                # We need to paginate to find today's date in slugs
-                for offset in range(0, 5000, 100):
-                    resp = requests.get(
-                        "https://gamma-api.polymarket.com/events",
-                        params={"active": "true", "closed": "false", "limit": 100,
-                                "offset": offset, "tag_id": "100639"},
-                        headers={"User-Agent": "Mozilla/5.0"},
-                        proxies={"http": None, "https": None},
-                        timeout=15,
-                    )
-                    if resp.status_code != 200:
-                        break
+                resp = requests.get(
+                    "https://gamma-api.polymarket.com/events",
+                    params={
+                        "active": "true", "closed": "false",
+                        "limit": 50, "order": "startDate", "ascending": "false",
+                    },
+                    headers={"User-Agent": "Mozilla/5.0"},
+                    proxies={"http": None, "https": None},
+                    timeout=15,
+                )
+                if resp.status_code == 200:
                     events = resp.json()
-                    if not events:
-                        break
-
-                    found_today = False
                     for event in events:
-                        slug = event.get("slug", "")
-                        if today in slug or tomorrow in slug:
-                            found_today = True
-                            for m in event.get("markets", []):
-                                m["_event"] = event.get("title", "")
-                                all_raw.append(m)
-
-                    # If we found today's games and we're past them, stop
-                    if found_today and offset > 0:
-                        # Check if we've gone past today
-                        last_slug = events[-1].get("slug", "")
-                        if tomorrow in last_slug:
-                            break
-
-                logger.info(f"Found {len(all_raw)} markets from today's sports events")
+                        for m in event.get("markets", []):
+                            m["_event"] = event.get("title", "")
+                            all_raw.append(m)
+                    logger.info(f"Found {len(all_raw)} markets from {len(events)} recent events")
             except Exception as e:
-                logger.warning(f"Sports fetch error: {e}")
+                logger.warning(f"Events fetch error: {e}")
 
             # 2. Also fetch top regular markets by volume
             resp = requests.get(
