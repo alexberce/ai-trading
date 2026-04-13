@@ -202,7 +202,6 @@ def run_scan_only():
 def run_trading_loop():
     """Main auto-trading loop."""
     logger.info("=== STARTING TRADING SYSTEM ===")
-    logger.info(f"Bankroll: ${config.BANKROLL:,.2f}")
     logger.info(f"Min edge: {config.MIN_EDGE_THRESHOLD:.0%}")
     logger.info(f"Max Kelly: {config.MAX_KELLY_FRACTION:.0%}")
     logger.info(f"Scan interval: {config.SCAN_INTERVAL_SECONDS}s")
