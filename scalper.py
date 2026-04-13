@@ -186,15 +186,18 @@ class Scalper:
                     (t, p) for t, p in self._price_history[mid]
                     if now_ts - t < self._HISTORY_WINDOW
                 ]
-                # Calculate real-time change (vs oldest price in window)
+                # Calculate changes at different timeframes
                 history = self._price_history[mid]
                 if len(history) >= 2:
+                    # Change since last tick (real-time, ~5-30 seconds ago)
+                    prev_price = history[-2][1]
+                    mkt["tick_change"] = (price - prev_price) / prev_price if prev_price > 0 else 0
+
+                    # Change over full window (~5 min)
                     oldest_price = history[0][1]
-                    if oldest_price > 0:
-                        mkt["rt_change"] = (price - oldest_price) / oldest_price
-                    else:
-                        mkt["rt_change"] = 0
+                    mkt["rt_change"] = (price - oldest_price) / oldest_price if oldest_price > 0 else 0
                 else:
+                    mkt["tick_change"] = 0
                     mkt["rt_change"] = 0
 
             # Sort by real-time change (most volatile), fall back to hourly
@@ -208,14 +211,34 @@ class Scalper:
 
     def _check_signal(self, mkt: dict) -> Optional[dict]:
         """Check if a market has a tradeable signal."""
-        rt = mkt.get("rt_change", 0)  # Real-time change (last 5 min)
+        tick = mkt.get("tick_change", 0)  # Change since last tick (~5-30s)
+        rt = mkt.get("rt_change", 0)  # Change over 5 min window
         h = mkt["h_change"]  # Hourly change
         d = mkt["d_change"]  # Daily change
         vol24 = mkt["vol24"]
         price = mkt["yes_price"]
         threshold = config.SCALP_MEAN_REVERSION_THRESHOLD
 
-        # Real-time signals (strongest — price just moved in last few minutes)
+        # Instant tick signal (price just moved THIS tick)
+        if abs(tick) >= threshold * 0.5:
+            if tick < 0:
+                return {
+                    "type": "instant_dip",
+                    "direction": "yes",
+                    "token_id": mkt["yes_token"],
+                    "price": price,
+                    "reason": f"Just dropped {tick:+.2%} this tick, buying dip",
+                }
+            else:
+                return {
+                    "type": "instant_spike",
+                    "direction": "no",
+                    "token_id": mkt["no_token"],
+                    "price": mkt["no_price"],
+                    "reason": f"Just spiked {tick:+.2%} this tick, buying NO",
+                }
+
+        # Short-term signal (moved in last 5 min)
         if abs(rt) >= threshold:
             if rt < 0:
                 return {
