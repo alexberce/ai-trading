@@ -150,14 +150,18 @@ function addAct(t,c){activity.unshift({t,c,ts:Date.now()});if(activity.length>8)
 // Stats - Variant E
 function renderStats(p){
   if(!p)return;
+  const positions=data?.open_positions||[];
+  const unrealizedPnl=positions.reduce((sum,pos)=>sum+(pos.pnl||pos.unrealized_pnl||0),0);
+  const totalPnl=(p.total_pnl_closed||0)+unrealizedPnl;
+  const totalReturn=p.initial_bankroll>0?totalPnl/p.initial_bankroll:0;
   const roi=p.closed_trades>0?((p.total_pnl_closed/p.closed_trades)/p.initial_bankroll*100).toFixed(1)+'%':'\u2014';
   document.getElementById('stats').innerHTML=`
     <div class="stat-hero">
       <div class="sl">Total Value</div>
       <div class="mono sv-hero">${$(p.bankroll)}</div>
       <div style="display:flex;gap:16px;margin-top:12px;font-size:11px">
-        <span style="color:var(--t2)">Return <span class="mono" style="color:${pnlClr(p.total_return)};font-weight:700">${p.total_return>=0?'+':''}${P(p.total_return)}</span></span>
-        <span style="color:var(--t2)">P&L <span class="mono" style="color:${pnlClr(p.total_pnl_closed)};font-weight:700">${p.total_pnl_closed>=0?'+':''}${$(p.total_pnl_closed)}</span></span>
+        <span style="color:var(--t2)">Return <span class="mono" style="color:${pnlClr(totalReturn)};font-weight:700">${totalReturn>=0?'+':''}${P(totalReturn)}</span></span>
+        <span style="color:var(--t2)">P&L <span class="mono" style="color:${pnlClr(totalPnl)};font-weight:700">${totalPnl>=0?'+':''}${$(totalPnl)}</span></span>
       </div>
       <div class="bar"><div class="bar-fill" style="width:50%;background:linear-gradient(90deg,var(--g),var(--b))"></div></div>
     </div>
