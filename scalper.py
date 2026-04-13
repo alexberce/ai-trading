@@ -165,14 +165,43 @@ class Scalper:
         return actions
 
     def _fetch_movers(self) -> list[dict]:
-        """Fetch markets with recent price movement, resolving within 7 days."""
+        """Fetch markets with price movement — prioritizes live sports events."""
         try:
+            all_raw = []
+
+            # 1. Fetch live sports events (where the real action is)
+            try:
+                # Get today's sports events
+                from datetime import date
+                today = date.today().isoformat()
+                for sport in ["mlb", "nhl", "nba", "epl", "atp", "ucl", "mls"]:
+                    resp = requests.get(
+                        "https://gamma-api.polymarket.com/events",
+                        params={"active": "true", "closed": "false", "limit": 20, "tag": sport},
+                        headers={"User-Agent": "Mozilla/5.0"},
+                        proxies={"http": None, "https": None},
+                        timeout=10,
+                    )
+                    if resp.status_code == 200:
+                        events = resp.json()
+                        for event in events:
+                            for m in event.get("markets", []):
+                                # Only include today's games
+                                end = m.get("endDateIso", "")
+                                if end and end <= today + "T23:59:59":
+                                    m["_sport"] = sport
+                                    m["_event"] = event.get("title", "")
+                                    all_raw.append(m)
+            except Exception as e:
+                logger.warning(f"Sports fetch error: {e}")
+
+            # 2. Also fetch top regular markets by volume
             resp = requests.get(
                 "https://gamma-api.polymarket.com/markets",
                 params={
                     "active": "true",
                     "closed": "false",
-                    "limit": 100,
+                    "limit": 50,
                     "order": "volume_24hr",
                     "ascending": "false",
                 },
@@ -180,10 +209,10 @@ class Scalper:
                 proxies={"http": None, "https": None},
                 timeout=15,
             )
-            if resp.status_code != 200:
-                return []
+            if resp.status_code == 200:
+                all_raw.extend(resp.json())
 
-            markets = resp.json()
+            markets = all_raw
             now = datetime.now(timezone.utc)
             movers = []
 
