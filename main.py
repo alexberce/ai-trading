@@ -422,6 +422,7 @@ def run_trading_loop():
         _state["market_feed"] = market_feed
         if scalper:
             scalper._market_feed = market_feed
+            scalper._sports_feed = sports_feed
     except Exception as e:
         logger.warning(f"WebSocket feeds not available: {e}")
 

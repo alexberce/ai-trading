@@ -201,6 +201,7 @@ class Scalper:
                     for event in events:
                         for m in event.get("markets", []):
                             m["_event"] = event.get("title", "")
+                            m["_event_slug"] = event.get("slug", "")
                             all_raw.append(m)
                     logger.info(f"Found {len(all_raw)} markets from {len(events)} recent events")
 
@@ -288,6 +289,27 @@ class Scalper:
 
                 # ONLY trade markets ending within 48 hours in the FUTURE
                 if hours_left is None or hours_left > 48 or hours_left < 0:
+                    continue
+
+                # Check if the game is LIVE via Sports WebSocket
+                slug = m.get("_event_slug") or m.get("slug", "")
+                # Extract event slug from market (e.g. "nhl-car-nyi-2026-04-14")
+                event_title = m.get("_event", "")
+                is_live = False
+                if hasattr(self, '_sports_feed') and self._sports_feed:
+                    # Check if any live game matches this market
+                    for game in self._sports_feed.get_live_games():
+                        game_slug = game.get("slug", "")
+                        if game_slug and game_slug in slug:
+                            is_live = True
+                            break
+
+                # Also consider it "live" if hours_left < 4 (game likely in progress)
+                if hours_left is not None and hours_left < 4:
+                    is_live = True
+
+                # Skip if not live — don't open positions on future games
+                if not is_live:
                     continue
 
                 movers.append({
