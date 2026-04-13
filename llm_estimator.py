@@ -169,7 +169,7 @@ def _query_claude(market, web_context: Optional[str] = None) -> Optional[dict]:
 1. READ THE RESOLUTION CRITERIA CAREFULLY. The description defines exactly what "YES" means. Pay attention to:
    - Specific dates, deadlines, and timeframes
    - What counts as the triggering event
-   - Events that happened BEFORE the market was created DO NOT COUNT unless the description explicitly says otherwise
+   - **CRITICAL: Events that happened BEFORE the market creation date ({market.created_at[:10] if market.created_at else 'unknown'}) DO NOT satisfy the resolution criteria.** For example, if a market asks "Will X happen?" and X already happened before the market was created, the answer depends on whether a NEW instance of X happens after market creation.
    - Edge cases and exceptions mentioned in the description
 2. If the event has ALREADY HAPPENED based on web context, the probability should be very high (>95%) or very low (<5%)
 3. Account for the current market price — it reflects the consensus of traders, but markets can be wrong
