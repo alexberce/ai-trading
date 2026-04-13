@@ -301,7 +301,7 @@ function render(){
     el.innerHTML=pos.length?'<div class="tbl">'+hdr+pos.map(renderPosRow).join('')+'</div>':'<div class="empty">No positions</div>';
   }else{
     const hdr=`<div class="tbl-hdr pos-cols"><div>Trade</div><div></div><div></div><div style="text-align:right">P&L</div><div style="text-align:right">Return</div></div>`;
-    el.innerHTML=hist.length?'<div class="tbl">'+hdr+[...hist].reverse().map(renderHistRow).join('')+'</div>':'<div class="empty">No history</div>';
+    el.innerHTML=hist.length?'<div class="tbl">'+hdr+hist.map(renderHistRow).join('')+'</div>':'<div class="empty">No history</div>';
   }
   document.getElementById('updated').textContent='Updated '+ago(data.updated_at);
 }

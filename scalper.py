@@ -42,7 +42,11 @@ class Scalper:
         if not config.TRADING_ENABLED:
             return actions
 
-        # Fetch active markets with price movement (cache for 30s)
+        # 1. CHECK EXITS FIRST — close positions hitting TP/SL/time
+        exit_actions = self._check_exits()
+        actions.extend(exit_actions)
+
+        # 2. Fetch active markets with price movement (cache for 30s)
         now = time.time()
         if now - self._last_fetch >= 30:
             self._markets_cache = self._fetch_movers()
@@ -59,9 +63,10 @@ class Scalper:
             pass
         existing_questions = {p.get("question", "").lower().strip() for p in existing}
 
-        # Check how many scalp positions are open
+        # Only count scalp-initiated positions (not LLM or manual)
+        # For now, count all — but don't block if under total limit
         open_count = len(existing)
-        if open_count >= config.SCALP_MAX_CONCURRENT:
+        if open_count >= config.SCALP_MAX_CONCURRENT + 10:  # Allow 10 non-scalp positions
             return actions
 
         # Find entry signals
@@ -83,6 +88,71 @@ class Scalper:
 
         if actions:
             logger.info(f"Scalper opened {len(actions)} trades")
+
+        return actions
+
+    def _check_exits(self) -> list[dict]:
+        """Check all open positions for take-profit, stop-loss, or max hold time."""
+        actions = []
+        positions = []
+        try:
+            positions = db.get_live_positions() if config.DATABASE_URL else []
+        except Exception:
+            return actions
+
+        for pos in positions:
+            entry = pos.get("entry_price", 0) or 0
+            cur = pos.get("cur_price", 0) or 0
+            token_id = pos.get("token_id", "")
+            shares = pos.get("num_shares", 0) or 0
+            question = pos.get("question", "")
+
+            if not entry or not cur or not token_id or shares <= 0:
+                continue
+
+            change = (cur - entry) / entry if entry > 0 else 0
+            reason = None
+
+            # Take profit
+            if change >= config.SCALP_TAKE_PROFIT:
+                reason = f"TP hit: {change:+.1%} (entry={entry:.3f} now={cur:.3f})"
+
+            # Stop loss
+            elif change <= -config.SCALP_STOP_LOSS:
+                reason = f"SL hit: {change:+.1%} (entry={entry:.3f} now={cur:.3f})"
+
+            # Max hold time
+            elif pos.get("opened_at"):
+                try:
+                    opened = datetime.fromisoformat(str(pos["opened_at"]).replace("Z", "+00:00"))
+                    held_minutes = (datetime.now(timezone.utc) - opened).total_seconds() / 60
+                    if held_minutes >= config.SCALP_MAX_HOLD_MINUTES:
+                        reason = f"Max hold {held_minutes:.0f}min (limit={config.SCALP_MAX_HOLD_MINUTES})"
+                except Exception:
+                    pass
+
+            if reason:
+                logger.info(f"SCALP EXIT: {question[:40]} — {reason}")
+                floor_price = round(max(cur * 0.90, 0.01), 2)
+                try:
+                    order = self.executor.place_order(
+                        token_id=token_id,
+                        side="SELL",
+                        price=floor_price,
+                        size=int(shares),
+                        order_type="FOK",
+                    )
+                    if order:
+                        actions.append({
+                            "action": "exit",
+                            "question": question,
+                            "reason": reason,
+                            "entry": entry,
+                            "exit": cur,
+                            "pnl": round((cur - entry) * shares, 2),
+                        })
+                except Exception as e:
+                    logger.error(f"Exit order failed: {e}")
 
         return actions
 

@@ -20,11 +20,21 @@ _conn = None
 
 
 def get_connection():
-    """Get or create a database connection."""
+    """Get or create a database connection. Auto-recovers from failures."""
     global _conn
-    if _conn is None or _conn.closed:
-        _conn = psycopg2.connect(config.DATABASE_URL)
-        _conn.autocommit = True
+    if _conn is not None and not _conn.closed:
+        try:
+            _conn.cursor().execute("SELECT 1")
+            return _conn
+        except Exception:
+            try:
+                _conn.close()
+            except Exception:
+                pass
+            _conn = None
+
+    _conn = psycopg2.connect(config.DATABASE_URL)
+    _conn.autocommit = True
     return _conn
 
 

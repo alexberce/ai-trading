@@ -181,13 +181,14 @@ class AppHandler(BaseHTTPRequestHandler):
 
         elif self.path == "/api/close":
             token_id = body.get("token_id", "")
-            size = int(body.get("size", 0))
+            size = float(body.get("size", 0))
             price = float(body.get("price", 0))
             if token_id and size > 0 and price > 0:
                 executor = _state.get("executor")
                 if executor:
-                    # Use FOK (Fill-Or-Kill) = market order, sells immediately at best price
-                    order = executor.place_order(token_id, "SELL", 0.01, size, order_type="FOK")
+                    # Use FOK (Fill-Or-Kill) with floor price at 90% of current to prevent dumping
+                    floor_price = round(max(price * 0.90, 0.01), 2)
+                    order = executor.place_order(token_id, "SELL", floor_price, size, order_type="FOK")
                     if order:
                         # Record the close in trades table
                         question = body.get("question", "")
@@ -329,18 +330,14 @@ def run_trading_loop():
         try:
             conn = db.get_connection()
             with conn.cursor() as cur:
-                # Terminate any other backend holding our lock
-                cur.execute("""
-                    SELECT pg_terminate_backend(pid)
-                    FROM pg_stat_activity
-                    WHERE pid != pg_backend_pid()
-                    AND query LIKE '%advisory%'
-                """)
-                cur.execute("SELECT pg_advisory_lock(%s)", (db.LEADER_LOCK_ID,))
-            logger.info("Acquired leader lock (forced)")
+                cur.execute("SELECT pg_try_advisory_lock(%s)", (db.LEADER_LOCK_ID,))
+                acquired = cur.fetchone()[0]
+            if acquired:
+                logger.info("Acquired leader lock")
+            else:
+                logger.info("Leader lock held by another instance, proceeding anyway")
         except Exception as e:
             logger.warning(f"Leader lock failed: {e}, proceeding as leader anyway")
-            is_leader = True
 
     # Initialize components
     fetcher = MarketFetcher()

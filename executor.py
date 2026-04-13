@@ -294,10 +294,8 @@ class Executor:
         target_price: float,
     ) -> Optional[Order]:
         """High-level trade execution with slight price improvement."""
-        if direction == "yes":
-            limit_price = min(target_price + config.LIMIT_OFFSET, 0.99)
-        else:
-            limit_price = min(target_price + config.LIMIT_OFFSET, 0.99)
+        # Both YES and NO tokens are bought the same way — price + offset
+        limit_price = min(target_price + config.LIMIT_OFFSET, 0.99)
 
         return self.place_order(
             token_id=token_id,
@@ -344,18 +342,20 @@ class Executor:
             if resp.status_code == 200:
                 data = resp.json()
                 raw = float(data.get("balance", "0"))
-                cash = raw / 1_000_000 if raw > 1_000_000 else raw
+                # USDC has 6 decimals — always convert
+                cash = raw / 1_000_000
         except Exception as e:
             logger.warning(f"CLOB balance fetch failed (proxy issue?): {e}")
 
-        # If CLOB failed, use last known cash from DB
-        if cash == 0 and config.DATABASE_URL:
+        # If CLOB call failed (not just returned 0), use cached balance
+        clob_failed = cash == 0  # Will be refined below
+        if clob_failed and config.DATABASE_URL:
             try:
                 import db
                 prev = db.get_balance()
                 if prev and prev.get("cash", 0) > 0:
                     cash = prev["cash"]
-                    logger.info(f"Using cached cash balance: ${cash:.2f}")
+                    logger.info(f"CLOB failed, using cached cash: ${cash:.2f}")
             except Exception:
                 pass
 

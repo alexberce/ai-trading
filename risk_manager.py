@@ -196,7 +196,7 @@ class RiskManager:
             ),
         }
         self.open_positions.append(position)
-        self.current_bankroll -= sizing["total_cost"]
+        # Don't decrement — bankroll is synced from Polymarket (source of truth)
 
         if config.DATABASE_URL:
             try:
