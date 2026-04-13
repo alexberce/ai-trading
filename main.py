@@ -399,6 +399,32 @@ def run_trading_loop():
         except ImportError:
             logger.warning("scalper.py not found, scalping disabled")
 
+    # ── WebSocket Feeds (real-time data) ─────────────────────────
+    sports_feed = None
+    market_feed = None
+    try:
+        from ws_feeds import SportsFeed, MarketFeed
+
+        def _on_price_change(token_id, new_price, old_price, change):
+            """Called by MarketFeed when a price changes >0.1%."""
+            logger.info(f"Price change: {token_id[:20]}... {old_price:.3f} -> {new_price:.3f} ({change:+.2%})")
+            # Notify scalper of real-time price change
+            if scalper:
+                scalper.on_price_change(token_id, new_price, old_price, change)
+
+        sports_feed = SportsFeed()
+        sports_feed.start()
+
+        market_feed = MarketFeed()
+        market_feed.start(on_price_change=_on_price_change)
+
+        _state["sports_feed"] = sports_feed
+        _state["market_feed"] = market_feed
+        if scalper:
+            scalper._market_feed = market_feed
+    except Exception as e:
+        logger.warning(f"WebSocket feeds not available: {e}")
+
     # ── Background Data Sync ─────────────────────────────────────
     # Fetches from Polymarket APIs and saves to DB.
     # Dashboard reads ONLY from DB — never calls APIs directly.

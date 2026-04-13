@@ -35,6 +35,20 @@ class Scalper:
         self._price_history: dict[str, list[tuple[float, float]]] = {}  # market_id -> [(timestamp, price)]
         self._HISTORY_WINDOW = 300  # Keep 5 minutes of history
         self._pending_orders: dict[str, dict] = {}  # token_id -> order info
+        self._ws_price_changes: list[dict] = []  # Real-time price changes from WebSocket
+
+    def on_price_change(self, token_id: str, new_price: float, old_price: float, change: float):
+        """Called by MarketFeed WebSocket when a price changes in real-time."""
+        self._ws_price_changes.append({
+            "token_id": token_id,
+            "new_price": new_price,
+            "old_price": old_price,
+            "change": change,
+            "timestamp": time.time(),
+        })
+        # Keep only last 100 changes
+        if len(self._ws_price_changes) > 100:
+            self._ws_price_changes = self._ws_price_changes[-100:]
 
     def tick(self) -> list[dict]:
         """Run one scalp cycle. Called every SCALP_SCAN_INTERVAL seconds."""
@@ -189,6 +203,19 @@ class Scalper:
                             m["_event"] = event.get("title", "")
                             all_raw.append(m)
                     logger.info(f"Found {len(all_raw)} markets from {len(events)} recent events")
+
+                # Subscribe to WebSocket price updates for these markets
+                if hasattr(self, '_market_feed') and self._market_feed:
+                    token_ids = []
+                    for event in events:
+                        for m in event.get("markets", []):
+                            tids = m.get("clobTokenIds", "[]")
+                            if isinstance(tids, str):
+                                try: tids = json.loads(tids)
+                                except: tids = []
+                            token_ids.extend(tids)
+                    if token_ids:
+                        self._market_feed.subscribe(token_ids)
             except Exception as e:
                 logger.warning(f"Events fetch error: {e}")
 
