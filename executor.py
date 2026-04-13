@@ -262,26 +262,34 @@ class Executor:
         return [o.to_dict() for o in self.filled_orders]
 
     def get_balance(self) -> Optional[float]:
-        """Fetch available USDC balance from Polymarket."""
+        """Fetch available USDC collateral balance from Polymarket."""
         if not self.api_key:
+            logger.error("No API key configured — cannot fetch balance")
             return None
 
-        path = "/balance"
+        path = "/balance-allowance"
+        params = {"asset_type": "COLLATERAL"}
         headers = self._get_headers("GET", path)
 
         try:
             resp = self.session.get(
                 f"{self.base_url}{path}",
                 headers=headers,
+                params=params,
                 timeout=10,
             )
             if resp.status_code == 200:
                 data = resp.json()
-                balance = float(data.get("balance", 0))
+                # Balance is returned as a string in wei/units — convert to float
+                balance_raw = data.get("balance", "0")
+                balance = float(balance_raw)
+                # USDC has 6 decimals on Polygon
+                if balance > 1_000_000:
+                    balance = balance / 1_000_000
                 logger.info(f"Polymarket balance: ${balance:.2f}")
                 return balance
             else:
-                logger.warning(f"Balance fetch failed: {resp.status_code}")
+                logger.error(f"Balance fetch failed: {resp.status_code} - {resp.text}")
                 return None
         except (requests.RequestException, ValueError) as e:
             logger.error(f"Balance fetch error: {e}")

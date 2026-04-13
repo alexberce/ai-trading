@@ -233,13 +233,15 @@ def run_trading_loop():
     # Load saved state if exists
     risk_mgr.load_state()
 
-    # Fetch bankroll from Polymarket — required to operate
+    # Fetch bankroll from Polymarket
     balance = executor.get_balance()
     if balance is None:
-        logger.error("FATAL: Cannot fetch balance from Polymarket. Check API credentials.")
-        sys.exit(1)
-    risk_mgr.sync_bankroll(balance)
-    logger.info(f"Bankroll from Polymarket: ${balance:,.2f}")
+        logger.error("Cannot fetch balance from Polymarket. Check API credentials. "
+                     "Dashboard will stay up but trading is disabled.")
+        is_leader = False  # Disable trading if we can't get balance
+    else:
+        risk_mgr.sync_bankroll(balance)
+        logger.info(f"Bankroll from Polymarket: ${balance:,.2f}")
 
     last_scan = 0
     last_order_check = 0
