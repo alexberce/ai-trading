@@ -23,9 +23,10 @@ export function broadcast(event: string, data: any) {
   }
 }
 
-// Adapter toggle callback — set by index.ts
+// Callbacks set by index.ts
 let adapterToggle: ((name: string, enabled: boolean) => void) | null = null;
 let getAdapters: () => Array<{ name: string; enabled: boolean }> = () => [];
+let getMarkets: () => any[] = () => [];
 
 export function setAdapterToggle(fn: (name: string, enabled: boolean) => void) {
   adapterToggle = fn;
@@ -33,6 +34,10 @@ export function setAdapterToggle(fn: (name: string, enabled: boolean) => void) {
 
 export function setAdapterList(fn: () => Array<{ name: string; enabled: boolean }>) {
   getAdapters = fn;
+}
+
+export function setMarketProvider(fn: () => any[]) {
+  getMarkets = fn;
 }
 
 export async function buildDashboardPayload() {
@@ -51,9 +56,9 @@ export async function buildDashboardPayload() {
       const result = await query(`
         SELECT
           COUNT(*) FILTER (WHERE pnl > 0) as wins,
-          COUNT(*) FILTER (WHERE pnl <= 0) as losses,
+          COUNT(*) FILTER (WHERE pnl <= 0 AND pnl IS NOT NULL) as losses,
           COALESCE(SUM(pnl), 0) as total_pnl
-        FROM trades WHERE status = 'closed'
+        FROM trades WHERE (status = 'closed' OR is_open = FALSE)
       `);
       if (result.rows[0]) {
         tradeStats = {
@@ -66,6 +71,19 @@ export async function buildDashboardPayload() {
   }
 
   const closedCount = tradeStats.wins + tradeStats.losses;
+
+  // Closed trades for history
+  let closedTrades: any[] = [];
+  if (config.databaseUrl) {
+    try {
+      const result = await query(`
+        SELECT question, direction, pnl, return_pct, closed_at, entry_price, settlement_price as exit_price
+        FROM trades WHERE (status = 'closed' OR is_open = FALSE)
+        ORDER BY closed_at DESC NULLS LAST LIMIT 50
+      `);
+      closedTrades = result.rows;
+    } catch {}
+  }
 
   return {
     updated_at: new Date().toISOString(),
@@ -86,10 +104,10 @@ export async function buildDashboardPayload() {
       halt_reason: '',
     },
     open_positions: realPositions,
-    closed_positions: [],
+    closed_positions: closedTrades,
     opportunities: [],
     scanned_markets: [],
-    all_markets: [],
+    all_markets: getMarkets(),
     banned_markets: [],
     adapters: getAdapters(),
   };

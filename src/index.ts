@@ -1,5 +1,6 @@
 import { config } from './config.js';
 import { runMigrations } from './db/migrations.js';
+import { query } from './db/client.js';
 import * as orderManager from './core/orderManager.js';
 import { fetchPositions, fetchPortfolioValue } from './core/portfolio.js';
 import { GammaFeed } from './feeds/gammaFeed.js';
@@ -9,9 +10,11 @@ import { SportsAdapter } from './adapters/sports/index.js';
 import { EsportsAdapter } from './adapters/esports/index.js';
 import { CryptoAdapter } from './adapters/crypto/index.js';
 import type { Adapter, Market, PriceChange, GameState } from './adapters/base.js';
-import { startServer, broadcast, setAdapterToggle, setAdapterList } from './server.js';
+import { startServer, broadcast, setAdapterToggle, setAdapterList, setMarketProvider } from './server.js';
 
 async function main() {
+  let cachedMarkets: Market[] = [];
+
   console.log('=== Polymarket Trading Bot (TypeScript) ===');
   console.log(`Trading: ${config.tradingEnabled ? 'ENABLED' : 'DISABLED'}`);
   console.log(`Proxy: ${config.proxyUrl ? config.proxyUrl.split('@').pop() : 'none'}`);
@@ -71,6 +74,7 @@ async function main() {
 
   // Initial market discovery + subscribe to prices
   const markets = await gammaFeed.fetchActiveMarkets();
+  cachedMarkets = [...markets];
   const tokenIds: string[] = [];
   for (const m of markets) {
     routeMarket(m);
@@ -85,6 +89,7 @@ async function main() {
     // Refresh markets every 60s
     try {
       const fresh = await gammaFeed.fetchActiveMarkets();
+      cachedMarkets = fresh;
       const newTokens: string[] = [];
       for (const m of fresh) {
         routeMarket(m);
@@ -129,15 +134,54 @@ async function main() {
   }, 5_000);
 
   // Wire adapter toggles to server
-  setAdapterToggle((name, enabled) => {
+  setAdapterToggle(async (name, enabled) => {
     const adapter = adapters.find(a => a.name === name);
     if (adapter) {
       adapter.setEnabled(enabled);
       console.log(`Adapter ${name} ${enabled ? 'enabled' : 'disabled'}`);
+      // Persist to DB
+      if (config.databaseUrl) {
+        try {
+          const states: Record<string, boolean> = {};
+          for (const a of adapters) states[a.name] = a.config.enabled;
+          await query(
+            `INSERT INTO settings (key, value, updated_at) VALUES ('adapter_states', $1, NOW())
+             ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+            [JSON.stringify(states)]
+          );
+        } catch {}
+      }
     }
   });
 
   setAdapterList(() => adapters.map(a => ({ name: a.name, enabled: a.config.enabled })));
+
+  setMarketProvider(() => cachedMarkets.map(m => ({
+    market_id: m.marketId,
+    question: m.question,
+    category: m.category,
+    yes_price: m.yesPrice,
+    no_price: m.noPrice,
+    liquidity: m.liquidity,
+    volume: m.volume24h,
+    end_date: m.endDate,
+  })));
+
+  // Load adapter enabled state from DB
+  if (config.databaseUrl) {
+    try {
+      const result = await query(`SELECT value FROM settings WHERE key = 'adapter_states'`);
+      if (result.rows.length > 0) {
+        const states = result.rows[0].value as Record<string, boolean>;
+        for (const adapter of adapters) {
+          if (states[adapter.name] !== undefined) {
+            adapter.setEnabled(states[adapter.name]);
+          }
+        }
+        console.log('Loaded adapter states from DB');
+      }
+    } catch {}
+  }
 
   // HTTP server + dashboard
   startServer();
