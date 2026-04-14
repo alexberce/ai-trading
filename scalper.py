@@ -108,7 +108,20 @@ class Scalper:
         }
 
         if order:
-            # TP sell placed by _check_exits after avgPrice syncs from Polymarket
+            # Place TP sell immediately at buy price + 5%
+            tp_price = round(new_price * (1 + config.SCALP_TAKE_PROFIT), 2)
+            logger.info(f"  WS TP sell at ${tp_price:.2f}")
+            try:
+                self.executor.place_order(
+                    token_id=token_id,
+                    side="SELL",
+                    price=tp_price,
+                    size=num_shares,
+                    order_type="GTC",
+                )
+            except Exception as e:
+                logger.warning(f"  WS TP sell failed: {e}")
+
             # Save to DB
             if config.DATABASE_URL:
                 try:
@@ -544,7 +557,21 @@ class Scalper:
         }
 
         if order:
-            # TP sell will be placed by _check_exits once avgPrice is synced from Polymarket
+            # Place TP sell at buy price + 5% — we know the exact fill price
+            buy_price = round(price, 2)
+            tp_price = round(buy_price * (1 + config.SCALP_TAKE_PROFIT), 2)
+            logger.info(f"  TP sell at ${tp_price:.2f} (bought at ${buy_price:.2f})")
+            try:
+                self.executor.place_order(
+                    token_id=signal["token_id"],
+                    side="SELL",
+                    price=tp_price,
+                    size=num_shares,
+                    order_type="GTC",
+                )
+            except Exception as e:
+                logger.warning(f"  TP sell failed: {e}")
+
             self._pending_orders[signal["token_id"]] = {
                 "question": mkt["question"],
                 "direction": signal["direction"],
