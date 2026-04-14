@@ -138,14 +138,12 @@ class Scalper:
             if abs(change) > 0.02:
                 logger.info(f"  Position: {question[:35]} entry={entry:.3f} cur={cur:.3f} change={change:+.1%}")
 
+            # TP sell is already placed on entry — don't touch it, let it fill
+            # Only intervene for stop loss or max hold time
             reason = None
 
-            # Take profit
-            if change >= config.SCALP_TAKE_PROFIT:
-                reason = f"TP hit: {change:+.1%} (entry={entry:.3f} now={cur:.3f})"
-
-            # Stop loss
-            elif change <= -config.SCALP_STOP_LOSS:
+            # Stop loss — only if loss exceeds threshold
+            if change <= -config.SCALP_STOP_LOSS:
                 reason = f"SL hit: {change:+.1%} (entry={entry:.3f} now={cur:.3f})"
 
             # Max hold time
@@ -154,36 +152,29 @@ class Scalper:
                     opened = datetime.fromisoformat(str(pos["opened_at"]).replace("Z", "+00:00"))
                     held_minutes = (datetime.now(timezone.utc) - opened).total_seconds() / 60
                     if held_minutes >= config.SCALP_MAX_HOLD_MINUTES:
-                        reason = f"Max hold {held_minutes:.0f}min (limit={config.SCALP_MAX_HOLD_MINUTES})"
+                        reason = f"Max hold {held_minutes:.0f}min"
                 except Exception:
                     pass
 
             if reason:
                 logger.info(f"SCALP EXIT: {question[:40]} — {reason}")
                 try:
-                    # Limit sell at take-profit price (entry + TP)
-                    # For SL/timeout, sell at current price to get out
-                    if "TP" in reason:
-                        sell_price = round(entry * (1 + config.SCALP_TAKE_PROFIT), 2)
-                    else:
-                        sell_price = round(cur, 2)
-
-                    order = self.executor.place_order(
-                        token_id=token_id,
-                        side="SELL",
-                        price=sell_price,
-                        size=int(shares),
-                        order_type="GTC",
-                    )
-                    if order:
-                        actions.append({
-                            "action": "exit",
-                            "question": question,
-                            "reason": reason,
-                            "entry": entry,
-                            "exit": cur,
-                            "pnl": round((cur - entry) * shares, 2),
-                        })
+                    # Limit sell at current price to get out
+                    if int(shares) >= 5:
+                        order = self.executor.place_order(
+                            token_id=token_id,
+                            side="SELL",
+                            price=round(cur, 2),
+                            size=int(shares),
+                            order_type="GTC",
+                        )
+                        if order:
+                            actions.append({
+                                "action": "exit",
+                                "question": question,
+                                "reason": reason,
+                                "pnl": round((cur - entry) * shares, 2),
+                            })
                 except Exception as e:
                     logger.error(f"Exit order failed: {e}")
 
