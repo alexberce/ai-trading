@@ -1,4 +1,7 @@
 import { ClobClient, Side } from '@polymarket/clob-client';
+import { createWalletClient, http } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { polygon } from 'viem/chains';
 import { config } from '../config.js';
 import { query } from '../db/client.js';
 
@@ -16,7 +19,11 @@ function getClient(): ClobClient {
     clobClient = new ClobClient(
       config.clobApi,
       137, // Polygon chain ID
-      undefined, // wallet — set via signer
+      config.privateKey ? createWalletClient({
+        account: privateKeyToAccount(config.privateKey as `0x${string}`),
+        chain: polygon,
+        transport: http(),
+      }) : undefined,
       {
         key: config.polyApiKey,
         secret: config.polyApiSecret,
