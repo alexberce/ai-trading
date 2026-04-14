@@ -11,6 +11,7 @@ Targets markets resolving within 7 days (active, not dead long-term bets).
 """
 import time
 import logging
+import threading
 import requests
 import json
 from datetime import datetime, timezone, timedelta
@@ -38,6 +39,18 @@ class Scalper:
         self._failed_exits: set[str] = set()  # token_ids where exit failed — don't retry
         self._ws_price_changes: list[dict] = []  # Real-time price changes from WebSocket
         self._token_to_question: dict[str, str] = {}  # token_id -> market question
+        self._owned_tokens: set[str] = set()  # THE lock — if token is here, don't buy it again
+        self._owned_lock = threading.Lock()
+        # Load existing positions on startup
+        try:
+            if config.DATABASE_URL:
+                for p in db.get_live_positions():
+                    tid = p.get("token_id", "")
+                    if tid:
+                        self._owned_tokens.add(tid)
+                logger.info(f"Loaded {len(self._owned_tokens)} owned tokens")
+        except Exception:
+            pass
 
     def on_price_change(self, token_id: str, new_price: float, old_price: float, change: float):
         """Called by MarketFeed WebSocket when a price changes in real-time.
@@ -94,55 +107,8 @@ class Scalper:
             return
 
         question = self._token_to_question.get(token_id, token_id[:20])
-        logger.info(f"WS SIGNAL: {reason} {question[:40]} buying {num_shares} @ {new_price:.3f}")
-
-        order = self.executor.place_order(
-            token_id=token_id,
-            side="BUY",
-            price=round(new_price, 2),
-            size=num_shares,
-            order_type="GTC",
-        )
-
-        self._pending_orders[token_id] = {
-            "question": self._token_to_question.get(token_id, token_id[:20]),
-            "attempted_at": time.time(),
-        }
-
-        if order:
-            # Place TP sell immediately at buy price + 5%
-            tp_price = round(new_price * (1 + config.SCALP_TAKE_PROFIT), 2)
-            logger.info(f"  WS TP sell at ${tp_price:.2f}")
-            try:
-                self.executor.place_order(
-                    token_id=token_id,
-                    side="SELL",
-                    price=tp_price,
-                    size=num_shares,
-                    order_type="GTC",
-                )
-            except Exception as e:
-                logger.warning(f"  WS TP sell failed: {e}")
-
-            # Save to DB
-            if config.DATABASE_URL:
-                try:
-                    positions = db.get_live_positions()
-                    positions.append({
-                        "question": self._token_to_question.get(token_id, token_id[:20]),
-                        "direction": "buy",
-                        "token_id": token_id,
-                        "entry_price": new_price,
-                        "num_shares": num_shares,
-                        "total_cost": round(new_price * num_shares, 2),
-                        "current_value": round(new_price * num_shares, 2),
-                        "cur_price": new_price,
-                        "pnl": 0,
-                        "source": "ws_scalper",
-                    })
-                    db.save_live_positions(positions)
-                except Exception:
-                    pass
+        logger.info(f"WS SIGNAL: {reason} {question[:40]}")
+        self._try_buy(token_id, new_price, num_shares, question)
 
     def tick(self) -> list[dict]:
         """Run one scalp cycle. Called every SCALP_SCAN_INTERVAL seconds."""
@@ -209,6 +175,65 @@ class Scalper:
             logger.info(f"Scalper opened {len(actions)} trades")
 
         return actions
+
+    def _try_buy(self, token_id: str, price: float, num_shares: int, question: str) -> bool:
+        """Single entry point for ALL buys. Thread-safe. Returns True if bought."""
+        with self._owned_lock:
+            if token_id in self._owned_tokens:
+                return False
+            # Mark as owned BEFORE placing the order
+            self._owned_tokens.add(token_id)
+
+        logger.info(f"BUYING: {question[:40]} {num_shares} shares @ ${price:.3f}")
+
+        order = self.executor.place_order(
+            token_id=token_id,
+            side="BUY",
+            price=round(price, 2),
+            size=num_shares,
+            order_type="GTC",
+        )
+
+        if order:
+            # Place TP sell
+            tp_price = round(price * (1 + config.SCALP_TAKE_PROFIT), 2)
+            logger.info(f"  TP sell at ${tp_price:.2f}")
+            try:
+                self.executor.place_order(
+                    token_id=token_id,
+                    side="SELL",
+                    price=tp_price,
+                    size=num_shares,
+                    order_type="GTC",
+                )
+            except Exception as e:
+                logger.warning(f"  TP sell failed: {e}")
+
+            # Save to DB
+            if config.DATABASE_URL:
+                try:
+                    positions = db.get_live_positions()
+                    positions.append({
+                        "question": question,
+                        "direction": "buy",
+                        "token_id": token_id,
+                        "entry_price": price,
+                        "num_shares": num_shares,
+                        "total_cost": round(price * num_shares, 2),
+                        "current_value": round(price * num_shares, 2),
+                        "cur_price": price,
+                        "pnl": 0,
+                        "source": "scalper",
+                    })
+                    db.save_live_positions(positions)
+                except Exception:
+                    pass
+            return True
+        else:
+            # Order failed — remove from owned
+            with self._owned_lock:
+                self._owned_tokens.discard(token_id)
+            return False
 
     def _check_exits(self) -> list[dict]:
         """Check all open positions for take-profit, stop-loss, or max hold time."""
@@ -521,12 +546,11 @@ class Scalper:
         return None
 
     def _enter(self, mkt: dict, signal: dict) -> Optional[dict]:
-        """Place a buy order for a scalp trade."""
+        """Place a buy order via _try_buy."""
         price = signal["price"]
         if price <= 0:
             return None
 
-        # Use cached balance, account for existing positions
         available = self.risk_mgr.current_bankroll
         positions = []
         try:
@@ -536,77 +560,16 @@ class Scalper:
         deployed = sum(p.get("total_cost", 0) or p.get("current_value", 0) or 0 for p in positions)
         free_cash = max(0, available - deployed)
 
-        spend = min(config.SCALP_MAX_POSITION_SIZE, free_cash * 0.3)  # Max 30% of free cash
+        spend = min(config.SCALP_MAX_POSITION_SIZE, free_cash * 0.3)
         if spend < 1:
             return None
 
-        logger.info(
-            f"SCALP ENTRY: {signal['type']} {signal['direction'].upper()} "
-            f"{mkt['question'][:40]} — spending ${spend:.2f} at market "
-            f"({signal['reason']})"
-        )
-
-        # Limit buy at current price — maker order = 0% fee
         num_shares = int(spend / price) if price > 0 else 0
         if num_shares < 5:
             return None
-        order = self.executor.place_order(
-            token_id=signal["token_id"],
-            side="BUY",
-            price=round(price, 2),
-            size=num_shares,
-            order_type="GTC",
-        )
 
-        # Track attempt regardless of success to prevent retry spam
-        self._pending_orders[signal["token_id"]] = {
-            "question": mkt["question"],
-            "attempted_at": time.time(),
-        }
-
-        if order:
-            # Place TP sell at buy price + 5% — we know the exact fill price
-            buy_price = round(price, 2)
-            tp_price = round(buy_price * (1 + config.SCALP_TAKE_PROFIT), 2)
-            logger.info(f"  TP sell at ${tp_price:.2f} (bought at ${buy_price:.2f})")
-            try:
-                self.executor.place_order(
-                    token_id=signal["token_id"],
-                    side="SELL",
-                    price=tp_price,
-                    size=num_shares,
-                    order_type="GTC",
-                )
-            except Exception as e:
-                logger.warning(f"  TP sell failed: {e}")
-
-            self._pending_orders[signal["token_id"]] = {
-                "question": mkt["question"],
-                "direction": signal["direction"],
-                "price": price,
-                "shares": num_shares,
-                "placed_at": time.time(),
-            }
-            # Save to DB immediately so next tick sees it
-            if config.DATABASE_URL:
-                try:
-                    positions = db.get_live_positions()
-                    positions.append({
-                        "question": mkt["question"],
-                        "direction": signal["direction"],
-                        "token_id": signal["token_id"],
-                        "market_id": mkt.get("market_id", ""),
-                        "entry_price": price,
-                        "num_shares": num_shares,
-                        "total_cost": round(price * num_shares, 2),
-                        "current_value": round(price * num_shares, 2),
-                        "cur_price": price,
-                        "pnl": 0,
-                        "source": "scalper",
-                    })
-                    db.save_live_positions(positions)
-                except Exception:
-                    pass
+        bought = self._try_buy(signal["token_id"], price, num_shares, mkt["question"])
+        if bought:
             return {
                 "action": "entry",
                 "type": signal["type"],
