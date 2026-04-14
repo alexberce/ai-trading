@@ -119,6 +119,8 @@ body{background:var(--bg);color:var(--t);font-family:'Inter',system-ui,sans-seri
 <div class="stats-grid" id="stats"></div>
 <div class="feed" id="feed"></div>
 
+<div id="adapterToggles" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap"></div>
+
 <div class="tabs" id="tabs">
   <button class="tab on" data-t="markets">Markets (0)</button>
   <button class="tab" data-t="opportunities">Signals (0)</button>
@@ -173,6 +175,23 @@ function renderStats(p){
 }
 
 function renderFeed(){document.getElementById('feed').innerHTML=activity.map(a=>`<div class="feed-item ${a.c||''}">${X(a.t)}</div>`).join('')}
+
+function renderAdapters(adapters){
+  if(!adapters||!adapters.length)return;
+  document.getElementById('adapterToggles').innerHTML=adapters.map(a=>
+    `<button onclick="toggleAdapter('${a.name}',${!a.enabled})" style="
+      padding:6px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;
+      border:1px solid ${a.enabled?'var(--g)':'var(--card-border)'};
+      background:${a.enabled?'var(--gd)':'var(--card)'};
+      color:${a.enabled?'var(--g)':'var(--t3)'}
+    ">${a.name.charAt(0).toUpperCase()+a.name.slice(1)} ${a.enabled?'ON':'OFF'}</button>`
+  ).join('');
+}
+
+async function toggleAdapter(name,enabled){
+  await apiPost('/api/adapter',{name,enabled});
+  addAct(`${name} ${enabled?'enabled':'disabled'}`,enabled?'green':'red');
+}
 
 // Market table row
 function renderMarketRow(m,idx){
@@ -266,6 +285,7 @@ function render(){
   document.getElementById('dot').className='dot '+(p.is_halted?'off':'on');
   document.getElementById('sub').textContent=(p.is_halted?'Halted: '+p.halt_reason:'Active')+' \u00b7 '+ago(data.last_scan);
   renderStats(p);
+  renderAdapters(data.adapters);
 
   document.querySelectorAll('.tab').forEach(b=>{
     const t=b.dataset.t;b.classList.toggle('on',t===tab);

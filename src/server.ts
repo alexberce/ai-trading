@@ -23,11 +23,16 @@ export function broadcast(event: string, data: any) {
   }
 }
 
-// Shared state set by index.ts
-let getState: () => Promise<any> = async () => ({});
+// Adapter toggle callback — set by index.ts
+let adapterToggle: ((name: string, enabled: boolean) => void) | null = null;
+let getAdapters: () => Array<{ name: string; enabled: boolean }> = () => [];
 
-export function setStateProvider(fn: () => Promise<any>) {
-  getState = fn;
+export function setAdapterToggle(fn: (name: string, enabled: boolean) => void) {
+  adapterToggle = fn;
+}
+
+export function setAdapterList(fn: () => Array<{ name: string; enabled: boolean }>) {
+  getAdapters = fn;
 }
 
 export async function buildDashboardPayload() {
@@ -86,6 +91,7 @@ export async function buildDashboardPayload() {
     scanned_markets: [],
     all_markets: [],
     banned_markets: [],
+    adapters: getAdapters(),
   };
 }
 
@@ -166,9 +172,15 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
         res.end(JSON.stringify({ ok: true, action: 'all_orders_cancelled' }));
       } else if (url === '/api/adapter') {
         // Toggle adapter on/off: { name: "sports", enabled: true }
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, ...data }));
-        // Actual toggle handled via setStateProvider callback
+        const { name, enabled } = data;
+        if (name && adapterToggle) {
+          adapterToggle(name, enabled);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, name, enabled }));
+        } else {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'name and enabled required' }));
+        }
       } else {
         res.writeHead(404);
         res.end();

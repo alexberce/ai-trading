@@ -9,7 +9,7 @@ import { SportsAdapter } from './adapters/sports/index.js';
 import { EsportsAdapter } from './adapters/esports/index.js';
 import { CryptoAdapter } from './adapters/crypto/index.js';
 import type { Adapter, Market, PriceChange, GameState } from './adapters/base.js';
-import { startServer, broadcast } from './server.js';
+import { startServer, broadcast, setAdapterToggle, setAdapterList } from './server.js';
 
 async function main() {
   console.log('=== Polymarket Trading Bot (TypeScript) ===');
@@ -127,6 +127,17 @@ async function main() {
       }
     }
   }, 5_000);
+
+  // Wire adapter toggles to server
+  setAdapterToggle((name, enabled) => {
+    const adapter = adapters.find(a => a.name === name);
+    if (adapter) {
+      adapter.setEnabled(enabled);
+      console.log(`Adapter ${name} ${enabled ? 'enabled' : 'disabled'}`);
+    }
+  });
+
+  setAdapterList(() => adapters.map(a => ({ name: a.name, enabled: a.config.enabled })));
 
   // HTTP server + dashboard
   startServer();
