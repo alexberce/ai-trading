@@ -108,20 +108,7 @@ class Scalper:
         }
 
         if order:
-            # Place TP sell immediately
-            tp_price = round(new_price * (1 + config.SCALP_TAKE_PROFIT), 2)
-            logger.info(f"  TP sell at {tp_price:.3f}")
-            try:
-                self.executor.place_order(
-                    token_id=token_id,
-                    side="SELL",
-                    price=tp_price,
-                    size=num_shares,
-                    order_type="GTC",
-                )
-            except Exception as e:
-                logger.warning(f"  TP sell failed: {e}")
-
+            # TP sell placed by _check_exits after avgPrice syncs from Polymarket
             # Save to DB
             if config.DATABASE_URL:
                 try:
@@ -237,12 +224,16 @@ class Scalper:
             if abs(change) > 0.02:
                 logger.info(f"  Position: {question[:35]} entry={entry:.3f} cur={cur:.3f} change={change:+.1%}")
 
-            # TP sell is already placed on entry — don't touch it, let it fill
-            # Only intervene for stop loss or max hold time
             reason = None
 
+            # Take profit — place limit sell at entry + TP%
+            # Uses avgPrice from Polymarket (correct even after multiple buys)
+            if change >= config.SCALP_TAKE_PROFIT:
+                tp_price = round(entry * (1 + config.SCALP_TAKE_PROFIT), 2)
+                reason = f"TP: placing sell at {tp_price:.3f} (entry={entry:.3f} +{config.SCALP_TAKE_PROFIT:.0%})"
+
             # Stop loss — only if loss exceeds threshold
-            if change <= -config.SCALP_STOP_LOSS:
+            elif change <= -config.SCALP_STOP_LOSS:
                 reason = f"SL hit: {change:+.1%} (entry={entry:.3f} now={cur:.3f})"
 
             # Max hold time
@@ -258,8 +249,12 @@ class Scalper:
             if reason:
                 logger.info(f"SCALP EXIT: {question[:40]} — {reason}")
                 try:
-                    # Limit sell at current price to get out
-                    sell_price = round(max(cur, 0.01), 2)
+                    # TP: sell at entry + TP%. SL/timeout: sell at current price
+                    if "TP:" in reason:
+                        sell_price = round(entry * (1 + config.SCALP_TAKE_PROFIT), 2)
+                    else:
+                        sell_price = round(max(cur, 0.01), 2)
+
                     if int(shares) >= 5 and sell_price >= 0.01:
                         order = self.executor.place_order(
                             token_id=token_id,
@@ -549,20 +544,7 @@ class Scalper:
         }
 
         if order:
-            # Immediately place take-profit limit sell
-            tp_price = round(price * (1 + config.SCALP_TAKE_PROFIT), 2)
-            logger.info(f"  Placing TP sell at ${tp_price:.2f} (entry=${price:.2f} + {config.SCALP_TAKE_PROFIT:.0%})")
-            try:
-                self.executor.place_order(
-                    token_id=signal["token_id"],
-                    side="SELL",
-                    price=tp_price,
-                    size=num_shares,
-                    order_type="GTC",
-                )
-            except Exception as e:
-                logger.warning(f"  TP sell order failed: {e}")
-
+            # TP sell will be placed by _check_exits once avgPrice is synced from Polymarket
             self._pending_orders[signal["token_id"]] = {
                 "question": mkt["question"],
                 "direction": signal["direction"],
