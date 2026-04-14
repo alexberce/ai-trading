@@ -88,7 +88,9 @@ def build_dashboard_payload() -> dict:
                 "scanned_markets": [], "all_markets": [], "banned_markets": []}
 
     try:
-        positions = db.get_live_positions()
+        all_positions = db.get_live_positions()
+        # Filter dust for display, keep all for tracking
+        positions = [p for p in all_positions if (p.get("current_value", 0) or p.get("total_cost", 0) or 0) >= 1]
         balance = db.get_balance()
         all_markets = db.get_all_markets()
         opportunities = db.get_latest_opportunities()
@@ -205,6 +207,9 @@ class AppHandler(BaseHTTPRequestHandler):
             if token_id and size > 0 and price > 0:
                 executor = _state.get("executor")
                 if executor:
+                    if size < 5:
+                        self._json_response({"ok": False, "error": "Position too small to sell (min 5 shares)"})
+                        return
                     # Limit sell at current price — maker = 0% fee
                     order = executor.place_order(token_id, "SELL", round(price, 2), int(size), order_type="GTC")
                     if order:

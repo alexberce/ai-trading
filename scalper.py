@@ -76,11 +76,10 @@ class Scalper:
             existing = db.get_live_positions() if config.DATABASE_URL else []
         except Exception:
             pass
-        existing_questions = {p.get("question", "").lower().strip() for p in existing}
-
-        # Only count scalp-initiated positions (not LLM or manual)
-        # For now, count all — but don't block if under total limit
-        open_count = len(existing)
+        # Ignore dust positions (< $1 value)
+        real_positions = [p for p in existing if (p.get("current_value", 0) or p.get("total_cost", 0) or 0) >= 1]
+        existing_questions = {p.get("question", "").lower().strip() for p in real_positions}
+        open_count = len(real_positions)
         if open_count >= config.SCALP_MAX_CONCURRENT:
             return actions
 
