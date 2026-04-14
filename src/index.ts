@@ -9,6 +9,7 @@ import { SportsAdapter } from './adapters/sports/index.js';
 import { EsportsAdapter } from './adapters/esports/index.js';
 import { CryptoAdapter } from './adapters/crypto/index.js';
 import type { Adapter, Market, PriceChange, GameState } from './adapters/base.js';
+import { startServer, broadcast } from './server.js';
 
 async function main() {
   console.log('=== Polymarket Trading Bot (TypeScript) ===');
@@ -114,7 +115,7 @@ async function main() {
     } catch (e: any) {
       console.error(`Position sync error: ${e.message}`);
     }
-  }, 30_000);
+  }, 10_000);
 
   setInterval(async () => {
     // Adapter ticks every 5s
@@ -127,7 +128,14 @@ async function main() {
     }
   }, 5_000);
 
-  // TODO: HTTP server for dashboard
+  // HTTP server + dashboard
+  startServer();
+
+  // Broadcast dashboard updates every 5s
+  setInterval(() => {
+    broadcast('dashboard', {}); // Client will refetch via /api/dashboard
+  }, 5_000);
+
   console.log(`\nBot running. Watching ${markets.length} markets across ${adapters.length} adapters.`);
 }
 

@@ -1,12 +1,15 @@
-FROM python:3.12-slim
+FROM node:22-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY package.json package-lock.json* ./
+RUN npm ci
 
-COPY . .
+COPY tsconfig.json ./
+COPY src/ ./src/
+
+RUN npx tsc
 
 EXPOSE 8080
 
-CMD ["python", "main.py"]
+CMD ["node", "dist/index.js"]
