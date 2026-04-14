@@ -171,6 +171,7 @@ class Scalper:
         # Ignore dust positions (< $1 value)
         real_positions = [p for p in existing if (p.get("current_value", 0) or p.get("total_cost", 0) or 0) >= 1]
         existing_questions = {p.get("question", "").lower().strip() for p in real_positions}
+        existing_tokens = {p.get("token_id", "") for p in real_positions}
         open_count = len(real_positions)
         if open_count >= config.SCALP_MAX_CONCURRENT:
             return actions
@@ -183,8 +184,10 @@ class Scalper:
             question = mkt.get("question", "")
             q_key = question.lower().strip()
 
-            # Skip if we have ANY position on this market (checked from DB every tick)
+            # Skip if we have ANY position on this market — check both question AND token IDs
             if q_key in existing_questions:
+                continue
+            if mkt.get("yes_token") in existing_tokens or mkt.get("no_token") in existing_tokens:
                 continue
             # Skip if we already attempted this market recently (prevents retry spam)
             attempted = {v.get("question", "").lower().strip() for v in self._pending_orders.values()
