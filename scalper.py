@@ -39,17 +39,108 @@ class Scalper:
         self._ws_price_changes: list[dict] = []  # Real-time price changes from WebSocket
 
     def on_price_change(self, token_id: str, new_price: float, old_price: float, change: float):
-        """Called by MarketFeed WebSocket when a price changes in real-time."""
-        self._ws_price_changes.append({
-            "token_id": token_id,
-            "new_price": new_price,
-            "old_price": old_price,
-            "change": change,
-            "timestamp": time.time(),
-        })
-        # Keep only last 100 changes
-        if len(self._ws_price_changes) > 100:
-            self._ws_price_changes = self._ws_price_changes[-100:]
+        """Called by MarketFeed WebSocket when a price changes in real-time.
+        This is the REAL signal — a trade just happened and moved the price."""
+        if not config.TRADING_ENABLED:
+            return
+
+        # Only act on significant moves
+        if abs(change) < config.SCALP_MEAN_REVERSION_THRESHOLD:
+            return
+
+        # Don't trade tokens we already have positions on
+        existing = []
+        try:
+            existing = db.get_live_positions() if config.DATABASE_URL else []
+        except Exception:
+            pass
+        existing_tokens = {p.get("token_id", "") for p in existing}
+        if token_id in existing_tokens:
+            return
+
+        # Don't retry recently attempted tokens
+        if token_id in self._pending_orders:
+            if time.time() - self._pending_orders[token_id].get("attempted_at", 0) < 300:
+                return
+
+        # Check position limits
+        real_positions = [p for p in existing if (p.get("current_value", 0) or 0) >= 1]
+        if len(real_positions) >= config.SCALP_MAX_CONCURRENT:
+            return
+
+        # Skip extreme prices
+        if new_price < 0.20 or new_price > 0.80:
+            return
+
+        # Check free cash
+        available = self.risk_mgr.current_bankroll
+        deployed = sum(p.get("total_cost", 0) or p.get("current_value", 0) or 0 for p in real_positions)
+        free_cash = max(0, available - deployed)
+        spend = min(config.SCALP_MAX_POSITION_SIZE, free_cash * 0.3)
+        if spend < 5:
+            return
+
+        num_shares = int(spend / new_price)
+        if num_shares < 5:
+            return
+
+        # Price dropped = buy the dip
+        if change < 0:
+            direction = "BUY"
+            reason = f"WS: price dropped {change:+.1%} ({old_price:.3f} -> {new_price:.3f})"
+        else:
+            # Price spiked — skip for now, don't chase
+            return
+
+        logger.info(f"WS SIGNAL: {reason} token={token_id[:20]}... buying {num_shares} @ {new_price:.3f}")
+
+        order = self.executor.place_order(
+            token_id=token_id,
+            side="BUY",
+            price=round(new_price, 2),
+            size=num_shares,
+            order_type="GTC",
+        )
+
+        self._pending_orders[token_id] = {
+            "question": f"WS trade {token_id[:15]}",
+            "attempted_at": time.time(),
+        }
+
+        if order:
+            # Place TP sell immediately
+            tp_price = round(new_price * (1 + config.SCALP_TAKE_PROFIT), 2)
+            logger.info(f"  TP sell at {tp_price:.3f}")
+            try:
+                self.executor.place_order(
+                    token_id=token_id,
+                    side="SELL",
+                    price=tp_price,
+                    size=num_shares,
+                    order_type="GTC",
+                )
+            except Exception as e:
+                logger.warning(f"  TP sell failed: {e}")
+
+            # Save to DB
+            if config.DATABASE_URL:
+                try:
+                    positions = db.get_live_positions()
+                    positions.append({
+                        "question": f"WS trade {token_id[:15]}",
+                        "direction": "buy",
+                        "token_id": token_id,
+                        "entry_price": new_price,
+                        "num_shares": num_shares,
+                        "total_cost": round(new_price * num_shares, 2),
+                        "current_value": round(new_price * num_shares, 2),
+                        "cur_price": new_price,
+                        "pnl": 0,
+                        "source": "ws_scalper",
+                    })
+                    db.save_live_positions(positions)
+                except Exception:
+                    pass
 
     def tick(self) -> list[dict]:
         """Run one scalp cycle. Called every SCALP_SCAN_INTERVAL seconds."""
