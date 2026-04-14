@@ -37,6 +37,7 @@ class Scalper:
         self._pending_orders: dict[str, dict] = {}  # token_id -> order info
         self._failed_exits: set[str] = set()  # token_ids where exit failed — don't retry
         self._ws_price_changes: list[dict] = []  # Real-time price changes from WebSocket
+        self._token_to_question: dict[str, str] = {}  # token_id -> market question
 
     def on_price_change(self, token_id: str, new_price: float, old_price: float, change: float):
         """Called by MarketFeed WebSocket when a price changes in real-time.
@@ -92,7 +93,8 @@ class Scalper:
             # Price spiked — skip for now, don't chase
             return
 
-        logger.info(f"WS SIGNAL: {reason} token={token_id[:20]}... buying {num_shares} @ {new_price:.3f}")
+        question = self._token_to_question.get(token_id, token_id[:20])
+        logger.info(f"WS SIGNAL: {reason} {question[:40]} buying {num_shares} @ {new_price:.3f}")
 
         order = self.executor.place_order(
             token_id=token_id,
@@ -103,7 +105,7 @@ class Scalper:
         )
 
         self._pending_orders[token_id] = {
-            "question": f"WS trade {token_id[:15]}",
+            "question": self._token_to_question.get(token_id, token_id[:20]),
             "attempted_at": time.time(),
         }
 
@@ -127,7 +129,7 @@ class Scalper:
                 try:
                     positions = db.get_live_positions()
                     positions.append({
-                        "question": f"WS trade {token_id[:15]}",
+                        "question": self._token_to_question.get(token_id, token_id[:20]),
                         "direction": "buy",
                         "token_id": token_id,
                         "entry_price": new_price,
@@ -413,8 +415,14 @@ class Scalper:
                             is_live = True
                             break
 
+                # Map token IDs to question for display
+                q = m.get("question", "")
+                self._token_to_question[token_ids[0]] = q
+                if len(token_ids) > 1:
+                    self._token_to_question[token_ids[1]] = q
+
                 movers.append({
-                    "question": m.get("question", ""),
+                    "question": q,
                     "market_id": m.get("id", ""),
                     "condition_id": m.get("condition_id", ""),
                     "yes_price": yes_price,
