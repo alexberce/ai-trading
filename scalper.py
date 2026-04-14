@@ -160,11 +160,12 @@ class Scalper:
                 logger.info(f"SCALP EXIT: {question[:40]} — {reason}")
                 try:
                     # Limit sell at current price to get out
-                    if int(shares) >= 5:
+                    sell_price = round(max(cur, 0.01), 2)
+                    if int(shares) >= 5 and sell_price >= 0.01:
                         order = self.executor.place_order(
                             token_id=token_id,
                             side="SELL",
-                            price=round(cur, 2),
+                            price=sell_price,
                             size=int(shares),
                             order_type="GTC",
                         )
@@ -264,8 +265,8 @@ class Scalper:
                         prices = []
                 yes_price = float(prices[0]) if prices else 0
 
-                # Skip extreme prices (near 0 or 1)
-                if yes_price < 0.05 or yes_price > 0.95:
+                # Skip extreme prices — don't buy longshots or near-certainties
+                if yes_price < 0.20 or yes_price > 0.80:
                     continue
 
                 # Parse token IDs
