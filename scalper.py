@@ -35,6 +35,7 @@ class Scalper:
         self._price_history: dict[str, list[tuple[float, float]]] = {}  # market_id -> [(timestamp, price)]
         self._HISTORY_WINDOW = 300  # Keep 5 minutes of history
         self._pending_orders: dict[str, dict] = {}  # token_id -> order info
+        self._failed_exits: set[str] = set()  # token_ids where exit failed — don't retry
         self._ws_price_changes: list[dict] = []  # Real-time price changes from WebSocket
 
     def on_price_change(self, token_id: str, new_price: float, old_price: float, change: float):
@@ -132,6 +133,10 @@ class Scalper:
             if not entry or not cur or not token_id or shares <= 0:
                 continue
 
+            # Don't retry failed exits
+            if token_id in self._failed_exits:
+                continue
+
             change = (cur - entry) / entry if entry > 0 else 0
 
             # Log positions with significant P&L
@@ -176,8 +181,11 @@ class Scalper:
                                 "reason": reason,
                                 "pnl": round((cur - entry) * shares, 2),
                             })
+                        else:
+                            self._failed_exits.add(token_id)
                 except Exception as e:
                     logger.error(f"Exit order failed: {e}")
+                    self._failed_exits.add(token_id)
 
         return actions
 
