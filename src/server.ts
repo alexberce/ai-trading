@@ -30,7 +30,7 @@ export function setStateProvider(fn: () => Promise<any>) {
   getState = fn;
 }
 
-async function buildDashboardPayload() {
+export async function buildDashboardPayload() {
   const positions = await fetchPositions();
   const realPositions = positions.filter(p => (p.current_value || p.total_cost || 0) >= 1);
   const portfolioValue = await fetchPortfolioValue();

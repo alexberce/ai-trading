@@ -131,9 +131,13 @@ async function main() {
   // HTTP server + dashboard
   startServer();
 
-  // Broadcast dashboard updates every 5s
-  setInterval(() => {
-    broadcast('dashboard', {}); // Client will refetch via /api/dashboard
+  // Broadcast dashboard updates every 5s with actual data
+  setInterval(async () => {
+    try {
+      const { buildDashboardPayload } = await import('./server.js');
+      const payload = await buildDashboardPayload();
+      broadcast('dashboard', payload);
+    } catch {}
   }, 5_000);
 
   console.log(`\nBot running. Watching ${markets.length} markets across ${adapters.length} adapters.`);
