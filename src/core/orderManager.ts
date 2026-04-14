@@ -20,7 +20,7 @@ function getClient(): ClobClient {
       config.clobApi,
       137, // Polygon chain ID
       config.privateKey ? createWalletClient({
-        account: privateKeyToAccount(config.privateKey as `0x${string}`),
+        account: privateKeyToAccount((config.privateKey.startsWith('0x') ? config.privateKey : '0x' + config.privateKey) as `0x${string}`),
         chain: polygon,
         transport: http(),
       }) : undefined,
